@@ -3,7 +3,7 @@
     "id": "credit-card-expenses",
     "name": "Credit Card Expenses Analysis",
     "category": "Accounts Payable",
-    "description": "Processes <b>Mesh corporate card exports</b> for all Pagaya entities and generates a formatted Excel report.<br><br><b>ENTITIES</b><br>Investments \u00b7 Tech LTD \u00b7 Tech US \u00b7 Theorem<br><br><b>REPORT INCLUDES</b><ul><li>Full transaction log</li><li>Summary by category, subsidiary, department &amp; manager</li><li>Business meals breakdown</li></ul>Previous reports <b>are archived automatically</b>.",
+    "description": "Processes <b>Mesh corporate card exports</b> for all Pagaya entities and generates a formatted Excel report.<br><br><b>ENTITIES</b><br>Investments · Tech LTD · Tech US · Theorem<br><br><b>REPORT INCLUDES</b><ul><li>Full transaction log</li><li>Summary by category, subsidiary, department &amp; manager</li><li>Business meals breakdown</li></ul>Previous reports <b>are archived automatically</b>.",
     "type": "apps_script",
     "badge": "APPS SCRIPT",
     "url": "",
@@ -14,10 +14,24 @@
     "business_owner": []
   },
   {
+    "id": "egencia-invoice-downloader",
+    "name": "Egencia Invoice Downloader",
+    "category": "Accounts Payable",
+    "description": "Downloads <strong>invoice PDF attachments</strong> from the Egencia travel API for all Egencia transactions in the latest Credit Card Expense Report.<br><br><b>WHAT IT DOES</b><ul><li>Reads the latest expense report and filters <strong>Card Name = Egencia</strong> rows (~150/month)</li><li>Extracts itinerary numbers and calls the Egencia Reporting API</li><li>Downloads invoice PDFs named <code>{itinerary}_{invoice_number}_{traveler}_{date}.pdf</code></li><li>Saves to the output Drive folder under <strong>Egencia_Invoices / YYYY-MM /</strong></li></ul>Safe to re-run — already-downloaded files are skipped automatically.",
+    "type": "apps_script",
+    "badge": "APPS SCRIPT",
+    "url": "https://drive.google.com/drive/folders/1A738g8JXOXWfcujOgCQZDvTS3J0siL2z",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1DD-QcC_VKOq958QhBcHF-vEpLqgfeUPfrWk_iiZAESs/edit?gid=0#gid=0",
+    "chat_url": "",
+    "slack_url": "",
+    "tools": [],
+    "business_owner": []
+  },
+  {
     "id": "abs-automation",
     "name": "ABS Automation",
     "category": "Non Corporate",
-    "description": "Extracts data from multiple <b>ABS instrument source files</b> and consolidates it into a single master output file for analysis and reporting.<br><br><b>CONFIGURATION FILES</b><ul><li><b>ABS-Interface-Config</b> \u2014 extraction rules per table</li><li><b>Master Output File</b> \u2014 output structure</li></ul>Run directly from <b>ABS-Interface-Config</b> \u2014 select year, month(s), and file(s) in the dialog.",
+    "description": "Extracts data from multiple <b>ABS instrument source files</b> and consolidates it into a single master output file for analysis and reporting.<br><br><b>CONFIGURATION FILES</b><ul><li><b>ABS-Interface-Config</b> — extraction rules per table</li><li><b>Master Output File</b> — output structure</li></ul>Run directly from <b>ABS-Interface-Config</b> — select year, month(s), and file(s) in the dialog.",
     "type": "workato",
     "badge": "WORKATO",
     "url": "",
@@ -31,7 +45,7 @@
     "id": "sox-dashboards",
     "name": "SOX Dashboards",
     "category": "Compliance",
-    "description": "Generates an <b>interactive HTML dashboard</b> from the SOX Risk Control Matrix, replicating the Phase 1 status slides.<br><br><b>11 PROCESSES</b><br>FSCP \u00b7 Payroll \u00b7 Equity \u00b7 Leases \u00b7 ELC \u00b7 Debt \u00b7 TAX \u00b7 Investments \u00b7 PTP \u00b7 Soft Cap \u00b7 Treasury<br><br><b>DASHBOARD SHOWS</b><ul><li>Key vs. non-key controls</li><li>Manual vs. automated controls</li><li>Testing status by owner</li><li>Frequency breakdown</li></ul>",
+    "description": "Generates an <b>interactive HTML dashboard</b> from the SOX Risk Control Matrix, replicating the Phase 1 status slides.<br><br><b>11 PROCESSES</b><br>FSCP · Payroll · Equity · Leases · ELC · Debt · TAX · Investments · PTP · Soft Cap · Treasury<br><br><b>DASHBOARD SHOWS</b><ul><li>Key vs. non-key controls</li><li>Manual vs. automated controls</li><li>Testing status by owner</li><li>Frequency breakdown</li></ul>",
     "type": "apps_script",
     "badge": "APPS SCRIPT",
     "url": "",
@@ -45,7 +59,7 @@
     "id": "monthly-reporting",
     "name": "Monthly Reporting Automation",
     "category": "Finance",
-    "description": "Automates <b>Theorem monthly reporting</b> for Unsecured Loans \u2014 replacing the manual S3 \u2192 Drive \u2192 copy-paste workflow with a single-click trigger.<br><br><b>WHAT IT DOES</b><ul><li>Migrates files from <b>AWS S3</b> into partner-specific Google Sheets templates</li><li>Handles automatic folder provisioning</li><li>Injects data by tab-mapping logic</li><li>Updates validation tabs instantly</li></ul>",
+    "description": "Automates <b>Theorem monthly reporting</b> for Unsecured Loans — replacing the manual S3 → Drive → copy-paste workflow with a single-click trigger.<br><br><b>WHAT IT DOES</b><ul><li>Migrates files from <b>AWS S3</b> into partner-specific Google Sheets templates</li><li>Handles automatic folder provisioning</li><li>Injects data by tab-mapping logic</li><li>Updates validation tabs instantly</li></ul>",
     "type": "workato",
     "badge": "WORKATO",
     "url": "",
@@ -59,14 +73,17 @@
     "id": "accrued-expense-pgy",
     "name": "Accrued Expense PGY Bot",
     "category": "Accounts Payable",
-    "description": "At month-end, Finance records <b>accrued expenses</b> \u2014 journal entries for costs incurred but not yet invoiced. Triggered via a single Slack command in <code>#accruedexpenses</code>.<br><br><b>INPUT FILES (SAVED TO DRIVE)</b><ul><li><b>NetSuite saved-search CSV</b> \u2014 open purchase orders</li><li><b>ZIP of invoices</b> \u2014 received without a matching PO</li><li><b>Future Bill saved search</b> (optional)</li></ul>Runs separately for ILS and all other currencies (USD).",
+    "description": "At month-end, Finance records <b>accrued expenses</b> — journal entries for costs incurred but not yet invoiced. Triggered via a single Slack command in <code>#accruedexpenses</code>.<br><br><b>INPUT FILES (SAVED TO DRIVE)</b><ul><li><b>NetSuite saved-search CSV</b> — open purchase orders</li><li><b>ZIP of invoices</b> — received without a matching PO</li><li><b>Future Bill saved search</b> (optional)</li></ul>Runs separately for ILS and all other currencies (USD).",
     "type": "workato",
     "badge": "WORKATO",
     "url": "",
     "sheet_url": "",
     "chat_url": "",
     "slack_url": "",
-    "tools": ["slack", "netsuite"],
+    "tools": [
+      "slack",
+      "netsuite"
+    ],
     "business_owner": []
   },
   {
@@ -87,14 +104,17 @@
     "id": "distributors-fees",
     "name": "Distributors Fees",
     "category": "Non Corporate",
-    "description": "Records <b>distributor agency fees</b> as accrued expenses \u2014 costs are booked even before the invoice arrives.<br><br><b>HOW IT WORKS</b><ul><li>Fee amounts are calculated in <b>Salesforce</b> and shared with each agency for approval</li><li>Once approved, a <b>Vendor Bill case</b> is raised in Salesforce</li><li>Workato listens for the platform event and creates the <b>Vendor Bill in NetSuite</b> automatically</li></ul>Runs separately for ILS and all other currencies (USD).",
+    "description": "Records <b>distributor agency fees</b> as accrued expenses — costs are booked even before the invoice arrives.<br><br><b>HOW IT WORKS</b><ul><li>Fee amounts are calculated in <b>Salesforce</b> and shared with each agency for approval</li><li>Once approved, a <b>Vendor Bill case</b> is raised in Salesforce</li><li>Workato listens for the platform event and creates the <b>Vendor Bill in NetSuite</b> automatically</li></ul>Runs separately for ILS and all other currencies (USD).",
     "type": "workato",
     "badge": "WORKATO",
     "url": "",
     "sheet_url": "",
     "chat_url": "",
     "slack_url": "",
-    "tools": ["salesforce", "netsuite"],
+    "tools": [
+      "salesforce",
+      "netsuite"
+    ],
     "business_owner": []
   }
 ]
