@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Console · Finance AI &amp; Automation Portal</title>
+  <link rel="icon" type="image/png" href="https://pagaya.com/favicon.ico">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:    #0A1628;
+      --teal:    #00C9A7;
+      --white:   #FFFFFF;
+      --bg:      #F5F7FA;
+      --gray-50: #F9FAFB;
+      --gray-100:#EFF1F5;
+      --gray-200:#E2E6ED;
+      --gray-300:#D1D5DB;
+      --gray-400:#9CA3AF;
+      --text:    #111827;
+      --muted:   #6B7280;
+      --danger:  #DC2626;
+      --radius:  10px;
+      --transition: 0.15s ease;
+    }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    .header {
+      background: var(--navy); height: 58px;
+      display: flex; align-items: center; padding: 0 28px; gap: 16px;
+      position: sticky; top: 0; z-index: 200;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .header-logo { font-size: 15px; font-weight: 600; color: var(--white); }
+    .header-sub  { font-size: 12px; color: rgba(255,255,255,0.45); }
+    .header-sep  { width: 1px; height: 18px; background: rgba(255,255,255,0.15); }
+    .spacer { flex: 1; }
+    .portal-link { font-size: 12px; color: rgba(255,255,255,0.5); text-decoration: none; transition: color var(--transition); }
+    .portal-link:hover { color: var(--teal); }
+    .container { max-width: 1060px; margin: 0 auto; padding: 32px 24px 80px; }
+    .actions-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px; gap: 12px; flex-wrap: wrap;
+    }
+    .actions-left { display: flex; align-items: center; gap: 10px; }
+    .page-title { font-size: 20px; font-weight: 700; }
+    .badge-count {
+      font-size: 12px; font-weight: 600; padding: 3px 10px;
+      background: var(--gray-100); border: 1px solid var(--gray-200);
+      border-radius: 20px; color: var(--muted);
+    }
+    .btn-add {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: var(--radius); font-size: 13px;
+      font-weight: 600; font-family: inherit; cursor: pointer;
+      text-decoration: none; background: var(--navy); color: var(--white);
+      border: none; transition: background var(--transition);
+    }
+    .btn-add:hover { background: #1a2e4a; }
+    .cards-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius); overflow: hidden; }
+    .cards-table thead th { padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--gray-50); border-bottom: 1px solid var(--gray-200); }
+    .cards-table tbody tr { transition: background var(--transition); }
+    .cards-table tbody tr:hover { background: var(--gray-50); }
+    .cards-table tbody tr + tr td { border-top: 1px solid var(--gray-100); }
+    .cards-table td { padding: 13px 14px; vertical-align: middle; font-size: 13px; }
+    .drag-handle { cursor: grab; color: var(--gray-300); font-size: 16px; user-select: none; }
+    .card-name { font-weight: 600; font-size: 13px; }
+    .card-subdesc { font-size: 12px; color: var(--muted); margin-top: 2px; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .type-badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: .04em; }
+    .type-py   { background: #E0F2FE; color: #0369A1; }
+    .type-wk   { background: #FEF3C7; color: #B45309; }
+    .type-wkai { background: #EFF6FF; color: #2563EB; }
+    .type-gas  { background: #E8F0FE; color: #1967D2; }
+    .action-cell { display: flex; gap: 6px; }
+    .btn-edit, .btn-del {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 5px 10px; border-radius: 6px; font-size: 12px;
+      font-weight: 500; font-family: inherit; cursor: pointer;
+      text-decoration: none; transition: all var(--transition); border: 1px solid;
+    }
+    .btn-edit { background: var(--white); border-color: var(--gray-200); color: var(--text); }
+    .btn-edit:hover { background: var(--gray-50); border-color: var(--gray-400); }
+    .btn-del { background: var(--white); border-color: #FECACA; color: var(--danger); }
+    .btn-del:hover { background: #FEF2F2; }
+    .empty-msg { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }
+    .drag-over { outline: 2px dashed var(--teal); outline-offset: -2px; }
+    .toast {
+      position: fixed; bottom: 28px; left: 50%;
+      transform: translateX(-50%); padding: 11px 20px;
+      background: #1a2540; color: #fff; border-radius: 10px;
+      font-size: 13px; font-weight: 500; z-index: 3000;
+      opacity: 0; transition: opacity .22s ease;
+      pointer-events: none; white-space: nowrap;
+      box-shadow: 0 4px 18px rgba(0,0,0,.28);
+    }
+    .toast.show { opacity: 1; }
+    .toast.error { background: #7F1D1D; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <span class="header-logo">Finance AI &amp; Automation Portal</span>
+  <span class="header-sep"></span>
+  <span class="header-sub">Admin Console</span>
+  <div class="spacer"></div>
+  <a class="portal-link" href="/">← Portal</a>
+</header>
+
+<div class="container">
+  <div class="actions-bar">
+    <div class="actions-left">
+      <span class="page-title">Portal Cards</span>
+      <span class="badge-count" id="card-count">Loading…</span>
+    </div>
+    <a class="btn-add" href="/admin-form">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Card
+    </a>
+  </div>
+
+  <div id="cards-table-wrap">
+    <div style="text-align:center;padding:48px;color:var(--muted);font-size:14px">
+      <div style="margin-bottom:10px"><div style="display:inline-block;width:20px;height:20px;border:2px solid #ccc;border-top-color:#555;border-radius:50%;animation:spin .7s linear infinite"></div></div>
+      Loading cards…
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var CARDS = [];
+
+window.addEventListener('load', async function() {
+  try {
+    const res = await fetch('/api/cards', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Failed to load');
+    CARDS = json.cards || [];
+    renderList();
+  } catch (err) {
+    document.getElementById('cards-table-wrap').innerHTML =
+      '<div class="empty-msg" style="color:#DC2626">Failed to load cards: ' +
+      (err && err.message ? err.message : String(err)) + '</div>';
+  }
+});
+
+function renderList() {
+  var wrap = document.getElementById('cards-table-wrap');
+  var n    = CARDS.length;
+  document.getElementById('card-count').textContent = n + ' card' + (n !== 1 ? 's' : '');
+
+  if (!n) {
+    wrap.innerHTML = '<div class="empty-msg">No cards yet. <a href="/admin-form" style="color:var(--teal);font-weight:600">Add the first one →</a></div>';
+    return;
+  }
+
+  var typeLabel = { python_script: 'Python Script', workato: 'Workato', workato_ai: 'Workato AI', apps_script: 'Apps Script' };
+  var typeClass = { python_script: 'type-py', workato: 'type-wk', workato_ai: 'type-wkai', apps_script: 'type-gas' };
+
+  wrap.innerHTML = '<table class="cards-table"><thead><tr>' +
+    '<th style="width:32px"></th><th>Card</th><th>Category</th><th>Platform</th><th>Business Owner(s)</th><th>Actions</th>' +
+    '</tr></thead><tbody id="sortable-body">' +
+    CARDS.map(function(c) {
+      var editUrl = '/admin-form?id=' + encodeURIComponent(c.id);
+      return '<tr data-id="' + esc(c.id) + '" draggable="true">' +
+        '<td><span class="drag-handle" title="Drag to reorder">⠿</span></td>' +
+        '<td><div class="card-name">' + esc(c.name || '') + '</div>' +
+            '<div class="card-subdesc">' + stripHtml(c.description || '').slice(0, 90) + '</div></td>' +
+        '<td style="font-size:13px">' + esc(c.category || '') + '</td>' +
+        '<td><span class="type-badge ' + (typeClass[c.type] || 'type-wk') + '">' + (typeLabel[c.type] || c.type || '') + '</span></td>' +
+        '<td style="font-size:13px;color:var(--muted)">' + esc((c.business_owner || []).join(', ') || '—') + '</td>' +
+        '<td><div class="action-cell">' +
+          '<a class="btn-edit" href="' + editUrl + '">✎ Edit</a>' +
+          '<button class="btn-del" onclick="confirmDelete(\'' + esc(c.id) + '\',\'' + esc(c.name || '').replace(/'/g, "\\'") + '\')">✕ Delete</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('') +
+    '</tbody></table>';
+
+  initDrag();
+}
+
+async function confirmDelete(id, name) {
+  if (!confirm('Delete «' + name + '»? This cannot be undone.')) return;
+  showToast('Deleting…');
+  try {
+    const res = await fetch('/api/cards/' + encodeURIComponent(id), {
+      method: 'DELETE', credentials: 'same-origin'
+    });
+    const json = await res.json();
+    if (json && json.ok) {
+      CARDS = CARDS.filter(function(c) { return c.id !== id; });
+      showToast('Deleted ✓');
+      renderList();
+    } else {
+      showToast('Error: ' + (json && json.error ? json.error : 'unknown'), true);
+    }
+  } catch (err) {
+    showToast('Error: ' + (err && err.message ? err.message : String(err)), true);
+  }
+}
+
+function initDrag() {
+  var tbody = document.getElementById('sortable-body');
+  if (!tbody) return;
+  var dragId = null;
+  tbody.querySelectorAll('tr').forEach(function(row) {
+    row.addEventListener('dragstart', function() { dragId = row.dataset.id; row.style.opacity = '.5'; });
+    row.addEventListener('dragend',   function() { row.style.opacity = ''; });
+    row.addEventListener('dragover',  function(e) { e.preventDefault(); row.classList.add('drag-over'); });
+    row.addEventListener('dragleave', function() { row.classList.remove('drag-over'); });
+    row.addEventListener('drop', async function(e) {
+      e.preventDefault(); row.classList.remove('drag-over');
+      if (dragId === row.dataset.id) return;
+      var fromIdx = CARDS.findIndex(function(c) { return c.id === dragId; });
+      var toIdx   = CARDS.findIndex(function(c) { return c.id === row.dataset.id; });
+      if (fromIdx < 0 || toIdx < 0) return;
+      var moved = CARDS.splice(fromIdx, 1)[0];
+      CARDS.splice(toIdx, 0, moved);
+      renderList();
+      try {
+        const res = await fetch('/api/cards/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ ids: CARDS.map(function(c) { return c.id; }) })
+        });
+        const json = await res.json();
+        if (json && json.ok) showToast('Order saved ✓');
+        else showToast('Reorder error: ' + (json && json.error ? json.error : 'unknown'), true);
+      } catch (err) {
+        showToast('Reorder error: ' + (err && err.message ? err.message : String(err)), true);
+      }
+    });
+  });
+}
+
+function showToast(msg, isError) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function() { t.className = 'toast'; }, 3000);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function stripHtml(s) {
+  return s.replace(/<[^>]*>/g, ' ').replace(/\s+/g,' ').trim();
+}
+</script>
+</body>
+</html>

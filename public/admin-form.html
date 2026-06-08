@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card · Admin Console</title>
+  <link rel="icon" type="image/png" href="https://pagaya.com/favicon.ico">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:    #0A1628;
+      --teal:    #00C9A7;
+      --white:   #FFFFFF;
+      --bg:      #F5F7FA;
+      --gray-50: #F9FAFB;
+      --gray-100:#EFF1F5;
+      --gray-200:#E2E6ED;
+      --gray-300:#D1D5DB;
+      --gray-400:#9CA3AF;
+      --text:    #111827;
+      --muted:   #6B7280;
+      --danger:  #DC2626;
+      --radius:  10px;
+      --transition: 0.15s ease;
+    }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    .header {
+      background: var(--navy); height: 58px;
+      display: flex; align-items: center; padding: 0 28px; gap: 16px;
+      position: sticky; top: 0; z-index: 200;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: rgba(255,255,255,0.6); font-size: 13px; text-decoration: none;
+      transition: color var(--transition);
+    }
+    .back-link:hover { color: var(--white); }
+    .header-logo { font-size: 15px; font-weight: 600; color: var(--white); }
+    .header-sub  { font-size: 12px; color: rgba(255,255,255,0.45); }
+    .header-sep  { width: 1px; height: 18px; background: rgba(255,255,255,0.15); }
+    .container { max-width: 1060px; margin: 0 auto; padding: 32px 24px 80px; }
+    .form-wrap { max-width: 720px; margin: 0 auto; }
+    .form-title { font-size: 22px; font-weight: 700; margin-bottom: 28px; }
+    .section { background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 16px; }
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 14px; }
+    .field-row { display: flex; gap: 16px; }
+    .field-row.cols2 .field { flex: 1; min-width: 0; }
+    .field-row.single .field { flex: 1; }
+    .field { display: flex; flex-direction: column; gap: 5px; margin-top: 0; }
+    .field + .field, .field-row + .field-row { margin-top: 14px; }
+    .field label { font-size: 13px; font-weight: 500; }
+    .field input[type=text], .field input[type=url], .field textarea {
+      padding: 9px 12px; font-size: 13px; font-family: inherit;
+      border: 1px solid var(--gray-200); border-radius: 7px;
+      outline: none; transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .field input:focus, .field textarea:focus {
+      border-color: #93C5FD; box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+    }
+    .field textarea { resize: vertical; min-height: 90px; }
+    .hint { font-size: 11px; color: var(--muted); }
+    .platform-toggle { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+    .platform-toggle input[type=radio] { position: absolute; opacity: 0; pointer-events: none; }
+    .platform-toggle label {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 7px 14px; border: 1.5px solid var(--gray-200); border-radius: 7px;
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      background: var(--white); color: var(--muted); transition: all var(--transition);
+    }
+    .platform-toggle input[type=radio]:checked + label { border-color: #3B82F6; background: #EFF6FF; color: #2563EB; }
+    .tools-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tool-check {
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+      padding: 6px 12px; border: 1.5px solid var(--gray-200); border-radius: 7px;
+      font-size: 12px; font-weight: 500; background: var(--white); color: var(--muted);
+      transition: all var(--transition);
+    }
+    .tool-check input { position: absolute; opacity: 0; pointer-events: none; }
+    .tool-check.checked { border-color: #3B82F6; background: #EFF6FF; color: #2563EB; }
+    .form-actions { display: flex; gap: 10px; margin-top: 24px; }
+    .btn-save {
+      padding: 10px 24px; background: var(--navy); color: var(--white);
+      border: none; border-radius: var(--radius); font-size: 14px; font-weight: 600;
+      font-family: inherit; cursor: pointer; transition: background var(--transition);
+    }
+    .btn-save:hover { background: #1a2e4a; }
+    .btn-save:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-cancel {
+      padding: 10px 20px; background: var(--white); color: var(--text);
+      border: 1px solid var(--gray-200); border-radius: var(--radius);
+      font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer;
+      text-decoration: none; display: inline-flex; align-items: center;
+      transition: all var(--transition);
+    }
+    .btn-cancel:hover { background: var(--gray-50); }
+    .delete-section { border-color: #FECACA !important; }
+    .btn-del-full {
+      padding: 10px 20px; background: #FEF2F2; color: var(--danger);
+      border: 1px solid #FECACA; border-radius: var(--radius);
+      font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;
+      transition: all var(--transition);
+    }
+    .btn-del-full:hover { background: #FEE2E2; }
+    .toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+      padding: 11px 20px; background: #1a2540; color: #fff; border-radius: 10px;
+      font-size: 13px; font-weight: 500; z-index: 3000;
+      opacity: 0; transition: opacity .22s ease; pointer-events: none;
+      white-space: nowrap; box-shadow: 0 4px 18px rgba(0,0,0,.28);
+    }
+    .toast.show { opacity: 1; }
+    .toast.error { background: #7F1D1D; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-overlay {
+      position: fixed; inset: 0; background: rgba(245,247,250,0.85);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; color: var(--muted); z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <a class="back-link" href="/admin">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+    Back
+  </a>
+  <span class="header-sep"></span>
+  <span class="header-logo">Finance AI &amp; Automation Portal</span>
+  <span class="header-sep"></span>
+  <span class="header-sub">Admin Console</span>
+</header>
+
+<!-- Loading overlay while fetching card data -->
+<div class="loading-overlay" id="loading-overlay">Loading…</div>
+
+<div class="container" id="main-content" style="visibility:hidden">
+  <div class="form-wrap">
+    <h1 class="form-title" id="form-title">New Card</h1>
+    <input type="hidden" id="f-id">
+
+    <div class="section">
+      <div class="section-title">Basic Information</div>
+      <div class="field-row cols2">
+        <div class="field">
+          <label>Card Title *</label>
+          <input type="text" id="f-name" placeholder="e.g. Credit Card Expenses Analysis" required>
+        </div>
+        <div class="field">
+          <label>Category *</label>
+          <input type="text" id="f-category" placeholder="e.g. Accounts Payable" list="cat-list" required>
+          <datalist id="cat-list"></datalist>
+        </div>
+      </div>
+      <div class="field-row single" style="margin-top:14px">
+        <div class="field">
+          <label>Platform</label>
+          <div class="platform-toggle">
+            <input type="radio" name="f-type" id="t-py"   value="python_script"><label for="t-py">🐍 Python Script</label>
+            <input type="radio" name="f-type" id="t-wk"   value="workato"      ><label for="t-wk">⚡ Workato</label>
+            <input type="radio" name="f-type" id="t-wkai" value="workato_ai"   ><label for="t-wkai">🤖 Workato AI</label>
+            <input type="radio" name="f-type" id="t-gas"  value="apps_script"  ><label for="t-gas">📜 Apps Script</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Description</div>
+      <div class="field">
+        <label>Description *</label>
+        <textarea id="f-description" rows="5" placeholder="Describe what this automation does…" required></textarea>
+        <span class="hint">You may use basic HTML: &lt;strong&gt;, &lt;em&gt;, &lt;code&gt;, &lt;ul&gt;, &lt;li&gt;</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Links &amp; Files</div>
+      <div class="field-row cols2">
+        <div class="field">
+          <label>Google Drive Folder URL</label>
+          <input type="url" id="f-url" placeholder="https://drive.google.com/drive/folders/…">
+          <span class="hint">Main Drive folder (use # if not applicable)</span>
+        </div>
+        <div class="field">
+          <label>App URL</label>
+          <input type="url" id="f-sheet-url" placeholder="https://docs.google.com/spreadsheets/d/…">
+          <span class="hint">Google Sheet, Workato, or any app URL</span>
+        </div>
+      </div>
+      <div class="field-row cols2" style="margin-top:14px">
+        <div class="field">
+          <label>Chat URL</label>
+          <input type="url" id="f-chat-url" placeholder="https://… (for AI chatbots)">
+        </div>
+        <div class="field">
+          <label>Slack URL</label>
+          <input type="url" id="f-slack-url" placeholder="https://slack.com/…">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Tool Logos &amp; Integrations</div>
+      <div class="tools-grid">
+        <label class="tool-check"><input type="checkbox" name="tools" value="slack"               onchange="toggleCheck(this)"> Slack</label>
+        <label class="tool-check"><input type="checkbox" name="tools" value="netsuite"            onchange="toggleCheck(this)"> NetSuite</label>
+        <label class="tool-check"><input type="checkbox" name="tools" value="salesforce"          onchange="toggleCheck(this)"> Salesforce</label>
+        <label class="tool-check"><input type="checkbox" name="tools" value="google_sheet"        onchange="toggleCheck(this)"> Google Sheets</label>
+        <label class="tool-check"><input type="checkbox" name="tools" value="google_drive_folder" onchange="toggleCheck(this)"> Google Drive</label>
+      </div>
+      <span class="hint" style="margin-top:10px;display:block">Selected tools show as badges on the portal card</span>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Business Owner(s)</div>
+      <div class="field-row single">
+        <div class="field">
+          <input type="text" id="f-owner" placeholder="e.g. jane.doe@pagaya.com, john.smith@pagaya.com">
+          <span class="hint">Comma-separated email addresses</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn-save" id="btn-save" onclick="saveCard()">💾 Save Card</button>
+      <a class="btn-cancel" href="/admin">Cancel</a>
+    </div>
+
+    <div class="section delete-section" id="delete-section" style="margin-top:16px;display:none">
+      <div class="section-title">Danger Zone</div>
+      <button class="btn-del-full" onclick="deleteCard()">✕ Delete this card</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// The original Apps Script template injected <?= cardId ?> / <?= baseUrl ?>.
+// In the Cloud Run port, cardId comes from the URL query string and the
+// base URL is always relative ('/').
+var CARD_ID = new URLSearchParams(window.location.search).get('id') || '';
+var ADMIN_URL = '/admin';
+var CARDS = [];
+var EDIT_CARD = null;
+
+window.addEventListener('load', async function() {
+  try {
+    const res = await fetch('/api/cards', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Failed to load');
+    CARDS = json.cards || [];
+
+    // Populate category suggestions
+    var cats = Array.from(new Set(CARDS.map(function(c) { return c.category; }).filter(Boolean)));
+    document.getElementById('cat-list').innerHTML = cats.map(function(c) {
+      return '<option value="' + esc(c) + '">';
+    }).join('');
+
+    if (CARD_ID) {
+      // Edit mode — find and fill the card
+      EDIT_CARD = CARDS.find(function(c) { return c.id === CARD_ID; });
+      if (EDIT_CARD) {
+        document.getElementById('form-title').textContent = 'Edit Card';
+        document.title = 'Edit Card · Admin Console';
+        document.getElementById('delete-section').style.display = '';
+        fillForm(EDIT_CARD);
+      } else {
+        document.getElementById('form-title').textContent = 'Card not found';
+      }
+    } else {
+      // New card mode
+      document.getElementById('form-title').textContent = 'New Card';
+      document.title = 'New Card · Admin Console';
+      document.querySelector('input[value="apps_script"]').checked = true;
+    }
+
+    // Show content, hide loading
+    document.getElementById('loading-overlay').style.display = 'none';
+    document.getElementById('main-content').style.visibility = 'visible';
+  } catch (err) {
+    document.getElementById('loading-overlay').innerHTML =
+      '<div style="text-align:center;color:#DC2626">Failed to load: ' +
+      (err && err.message ? err.message : String(err)) + '<br><a href="' + ADMIN_URL + '">← Back</a></div>';
+  }
+});
+
+function fillForm(card) {
+  document.getElementById('f-id').value          = card.id          || '';
+  document.getElementById('f-name').value        = card.name        || '';
+  document.getElementById('f-category').value    = card.category    || '';
+  document.getElementById('f-description').value = card.description || '';
+  document.getElementById('f-url').value         = card.url         || '';
+  document.getElementById('f-sheet-url').value   = card.sheet_url   || '';
+  document.getElementById('f-chat-url').value    = card.chat_url    || '';
+  document.getElementById('f-slack-url').value   = card.slack_url   || '';
+  document.getElementById('f-owner').value       = (card.business_owner || []).join(', ');
+
+  var radio = document.querySelector('input[value="' + (card.type || 'apps_script') + '"]');
+  if (radio) radio.checked = true;
+
+  document.querySelectorAll('input[name="tools"]').forEach(function(cb) {
+    var checked = (card.tools || []).includes(cb.value);
+    cb.checked = checked;
+    cb.closest('.tool-check').classList.toggle('checked', checked);
+  });
+}
+
+function readForm() {
+  var name = document.getElementById('f-name').value.trim();
+  var cat  = document.getElementById('f-category').value.trim();
+  var desc = document.getElementById('f-description').value.trim();
+  if (!name) { showToast('Card title is required', true); return null; }
+  if (!cat)  { showToast('Category is required', true); return null; }
+  if (!desc) { showToast('Description is required', true); return null; }
+
+  var typeEl = document.querySelector('input[name="f-type"]:checked');
+  var type   = typeEl ? typeEl.value : 'apps_script';
+  var BADGE_MAP = { python_script: 'Python Script', workato: 'Workato', workato_ai: 'Workato AI', apps_script: 'Apps Script' };
+
+  var tools = [];
+  document.querySelectorAll('input[name="tools"]:checked').forEach(function(cb) { tools.push(cb.value); });
+
+  var ownerRaw = document.getElementById('f-owner').value.trim();
+  var owners   = ownerRaw ? ownerRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+
+  var existingId = document.getElementById('f-id').value.trim();
+  var id = existingId || slugify(name);
+
+  return {
+    id: id, name: name, category: cat, description: desc, type: type,
+    badge: BADGE_MAP[type] || type,
+    url:       document.getElementById('f-url').value.trim()       || '#',
+    sheet_url: document.getElementById('f-sheet-url').value.trim() || '',
+    chat_url:  document.getElementById('f-chat-url').value.trim()  || '',
+    slack_url: document.getElementById('f-slack-url').value.trim() || '',
+    tools: tools, business_owner: owners,
+  };
+}
+
+async function saveCard() {
+  var card = readForm();
+  if (!card) return;
+  var btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving…';
+
+  try {
+    const res = await fetch('/api/cards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(card)
+    });
+    const json = await res.json();
+    if (json && json.ok) {
+      showToast('Card saved ✓');
+      setTimeout(function() { window.location.href = ADMIN_URL; }, 900);
+    } else {
+      btn.disabled = false; btn.textContent = '💾 Save Card';
+      showToast('Error: ' + (json && json.error ? json.error : 'unknown'), true);
+    }
+  } catch (err) {
+    btn.disabled = false; btn.textContent = '💾 Save Card';
+    showToast('Error: ' + (err && err.message ? err.message : String(err)), true);
+  }
+}
+
+async function deleteCard() {
+  var name = EDIT_CARD ? EDIT_CARD.name : CARD_ID;
+  if (!confirm('Delete «' + name + '»? This cannot be undone.')) return;
+  showToast('Deleting…');
+  try {
+    const res = await fetch('/api/cards/' + encodeURIComponent(CARD_ID), {
+      method: 'DELETE', credentials: 'same-origin'
+    });
+    const json = await res.json();
+    if (json && json.ok) {
+      showToast('Deleted ✓');
+      setTimeout(function() { window.location.href = ADMIN_URL; }, 900);
+    } else {
+      showToast('Error: ' + (json && json.error ? json.error : 'unknown'), true);
+    }
+  } catch (err) {
+    showToast('Error: ' + (err && err.message ? err.message : String(err)), true);
+  }
+}
+
+function toggleCheck(cb) {
+  cb.closest('.tool-check').classList.toggle('checked', cb.checked);
+}
+
+function showToast(msg, isError) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function() { t.className = 'toast'; }, 3000);
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60); }
+</script>
+</body>
+</html>

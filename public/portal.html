@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finance AI &amp; Automation Portal | Pagaya</title>
+  <link rel="icon" type="image/png" href="https://pagaya.com/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:       #0A1628;
+      --navy-mid:   #0D1F3C;
+      --teal:       #00C9A7;
+      --teal-dark:  #00A88A;
+      --white:      #FFFFFF;
+      --gray-50:    #F5F7FA;
+      --gray-100:   #EFF1F5;
+      --gray-200:   #E2E6ED;
+      --gray-300:   #D1D5DB;
+      --gray-400:   #9CA3AF;
+      --text:       #111827;
+      --text-muted: #6B7280;
+      --radius:     14px;
+      --radius-sm:  8px;
+      --transition: 0.18s ease;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--gray-50);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+    .header {
+      background: var(--white);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid var(--gray-200);
+    }
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+    .logo { display: flex; align-items: center; gap: 14px; }
+    .logo-divider { width: 1px; height: 20px; background: var(--gray-300); }
+    .logo-portal { font-size: 13px; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
+    .header-tag {
+      font-size: 11px; font-weight: 600; color: var(--navy);
+      letter-spacing: 0.08em; text-transform: uppercase;
+      background: var(--gray-100); border: 1px solid var(--gray-200);
+      padding: 4px 12px; border-radius: 20px;
+    }
+    .hero {
+      background: var(--navy-mid);
+      padding: 32px 0 36px;
+      position: relative;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0,201,167,0.25), transparent);
+    }
+    .hero-eyebrow {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--teal); margin-bottom: 8px;
+    }
+    .hero-title {
+      font-size: clamp(22px, 3vw, 32px); font-weight: 700;
+      color: var(--white); line-height: 1.2; letter-spacing: -0.5px; margin-bottom: 8px;
+    }
+    .hero-subtitle {
+      font-size: 13px; color: rgba(255,255,255,0.5);
+      max-width: 480px; line-height: 1.6; margin-bottom: 20px;
+    }
+    .search-wrap { position: relative; max-width: 500px; }
+    .search-icon {
+      position: absolute; left: 16px; top: 50%;
+      transform: translateY(-50%); color: var(--gray-400); pointer-events: none;
+    }
+    .search-input {
+      width: 100%; padding: 14px 16px 14px 46px;
+      font-size: 14px; font-family: inherit;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: var(--radius); color: var(--white);
+      outline: none; transition: border-color var(--transition), background var(--transition);
+    }
+    .search-input::placeholder { color: rgba(255,255,255,0.3); }
+    .search-input:focus { border-color: var(--teal); background: rgba(255,255,255,0.1); }
+    .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+    .main { flex: 1; padding: 40px 0 80px; }
+    .stats-bar { display: flex; align-items: center; gap: 20px; margin-bottom: 28px; }
+    .stat-item { font-size: 13px; color: var(--text-muted); }
+    .stat-item strong { color: var(--text); font-weight: 600; margin-right: 3px; }
+    .stat-div { width: 1px; height: 14px; background: var(--gray-200); }
+    .tabs-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
+    .tab {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 16px; font-size: 13px; font-weight: 500; font-family: inherit;
+      color: var(--text-muted); background: var(--white);
+      border: 1px solid var(--gray-200); border-radius: 30px;
+      cursor: pointer; transition: all var(--transition);
+    }
+    .tab:hover { color: var(--text); border-color: var(--gray-400); }
+    .tab.tab--active { background: var(--navy); color: var(--white); border-color: var(--navy); }
+    .tab-count {
+      font-size: 11px; font-weight: 600; padding: 2px 7px;
+      border-radius: 10px; background: rgba(0,0,0,0.08);
+    }
+    .tab.tab--active .tab-count { background: rgba(255,255,255,0.15); }
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--white); border: 1px solid var(--gray-200);
+      border-radius: var(--radius); display: flex; flex-direction: column;
+      overflow: hidden; transition: border-color var(--transition), transform var(--transition);
+    }
+    .card:hover { border-color: var(--gray-400); transform: translateY(-2px); }
+    .card-top-bar { height: 4px; width: 100%; flex-shrink: 0; }
+    .card-body { padding: 22px 22px 20px; display: flex; flex-direction: column; flex: 1; }
+    .card-badges { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+      padding: 4px 10px 4px 7px; border-radius: 20px; text-transform: uppercase;
+    }
+    .card-title {
+      font-size: 16px; font-weight: 600; color: var(--text);
+      margin-bottom: 10px; line-height: 1.3; letter-spacing: -0.2px;
+    }
+    .card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.55; flex: 1; margin-bottom: 20px; }
+    .card-desc * { font-size: 12px; }
+    .card-desc ul { margin: 3px 0 5px 14px; padding: 0; }
+    .card-desc li { margin-bottom: 2px; }
+    .card-desc strong { font-weight: 600; color: var(--text); }
+    .card-desc code { font-size: 11px; background: var(--gray-100); border-radius: 3px; padding: 1px 4px; }
+    .card-desc .desc-label {
+      display: block; font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em;
+      color: var(--text-muted); opacity: .7; margin: 7px 0 2px;
+    }
+    .card-footer {
+      display: flex; flex-direction: column; gap: 12px;
+      padding-top: 16px; border-top: 1px solid var(--gray-100);
+    }
+    .card-meta { display: flex; flex-direction: column; gap: 4px; }
+    .meta-item {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 12px; color: var(--text-muted);
+    }
+    .meta-item svg { flex-shrink: 0; opacity: 0.6; }
+    .card-actions { display: flex; align-items: center; gap: 8px; align-self: flex-end; }
+    .btn-open {
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      height: 36px; padding: 0 14px; border-radius: var(--radius-sm);
+      border: 1px solid var(--gray-200); background: var(--white); color: var(--text);
+      font-size: 12px; font-weight: 600; font-family: inherit;
+      text-decoration: none; white-space: nowrap; cursor: pointer;
+      transition: all var(--transition); flex-shrink: 0;
+    }
+    .btn-open:hover { background: var(--gray-100); border-color: var(--gray-400); color: var(--text); }
+    .toast {
+      position: fixed; bottom: 28px; left: 50%;
+      transform: translateX(-50%); background: #1a2540; color: #fff;
+      padding: 11px 20px; border-radius: 10px; font-size: 13px; font-weight: 500;
+      z-index: 3000; opacity: 0; transition: opacity 0.22s ease;
+      pointer-events: none; white-space: nowrap; box-shadow: 0 4px 18px rgba(0,0,0,0.28);
+    }
+    .toast.show { opacity: 1; }
+    .empty-state { text-align: center; padding: 80px 24px; }
+    .empty-icon { margin: 0 auto 20px; width: 44px; height: 44px; color: var(--gray-400); }
+    .empty-title { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .empty-text { font-size: 14px; color: var(--text-muted); }
+    .footer {
+      background: var(--navy); border-top: 1px solid rgba(255,255,255,0.06); padding: 28px 0;
+    }
+    .footer-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+    }
+    .footer-copy { font-size: 12px; color: rgba(255,255,255,0.35); }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { font-size: 12px; color: rgba(255,255,255,0.45); text-decoration: none; transition: color var(--transition); }
+    .footer-links a:hover { color: var(--teal); }
+    /* Loading skeleton */
+    .loading-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
+    .skeleton {
+      background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius);
+      height: 240px; overflow: hidden; position: relative;
+    }
+    .skeleton::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(0,0,0,0.04) 50%, transparent 100%);
+      animation: shimmer 1.4s infinite;
+    }
+    @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="container header-inner">
+    <div class="logo">
+      <div class="logo-portal">Finance AI &amp; Automation Portal</div>
+    </div>
+    <span class="header-tag">Pagaya</span>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-eyebrow">Finance &amp; Business Applications</div>
+    <h1 class="hero-title">Finance AI &amp; Automation Portal</h1>
+    <p class="hero-subtitle">Centralised hub for all Finance automation tools, AI assistants and reporting workflows.</p>
+    <div class="search-wrap">
+      <span class="search-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      </span>
+      <input class="search-input" type="text" id="search" placeholder="Search automations…" autocomplete="off">
+    </div>
+  </div>
+</section>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="container">
+    <div class="stats-bar" id="stats-bar"></div>
+    <div class="tabs-wrap" id="tabs"></div>
+
+    <!-- Loading skeletons shown while cards load -->
+    <div class="loading-grid" id="loading-grid">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+
+    <div class="cards-grid" id="cards" style="display:none"></div>
+    <div id="empty" style="display:none">
+      <div class="empty-state">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <div class="empty-title">No results</div>
+        <div class="empty-text">Try different keywords or clear the search.</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span class="footer-copy">&copy; 2025 Pagaya &middot; Finance AI &amp; Automation Portal</span>
+    <div class="footer-links">
+      <a href="/admin" rel="noopener noreferrer">Admin</a>
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Icon overrides (inlined from icons.js) ────────────────────
+window.ICON_OVERRIDES = {
+  apps_script: {
+    color: '#1967D2', bg: '#E8F0FE',
+    icon: '<svg width="15" height="15" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;vertical-align:middle;border-radius:2px"><rect width="24" height="24" rx="3" fill="#fff"/><path fill="#EA4335" d="M7.5 3.5C6 6.5 6 17.5 7.5 20.5L9.5 19C8.2 16.5 8.2 7.5 9.5 5Z"/><path fill="#FBBC04" d="M11 3.5C9.5 6.5 9.5 17.5 11 20.5L13 19C11.7 16.5 11.7 7.5 13 5Z"/><path fill="#34A853" d="M13 3.5C14.5 6.5 14.5 17.5 13 20.5L11 19C12.3 16.5 12.3 7.5 11 5Z"/><path fill="#4285F4" d="M16.5 3.5C18 6.5 18 17.5 16.5 20.5L14.5 19C15.8 16.5 15.8 7.5 14.5 5Z"/></svg>'
+  },
+  slack: {
+    color: '#4A154B', bg: '#F3E8FF',
+    icon: '<svg width="15" height="15" viewBox="0 0 15 15" style="flex-shrink:0;vertical-align:middle;border-radius:2px"><rect width="15" height="15" rx="2" fill="white"/><rect x="4" y="1.5" width="2.2" height="5.5" rx="1.1" fill="#E01E5A"/><rect x="4" y="8" width="2.2" height="5.5" rx="1.1" fill="#ECB22E"/><rect x="8.8" y="1.5" width="2.2" height="5.5" rx="1.1" fill="#36C5F0"/><rect x="8.8" y="8" width="2.2" height="5.5" rx="1.1" fill="#2EB67D"/><rect x="1.5" y="4" width="5.5" height="2.2" rx="1.1" fill="#E01E5A"/><rect x="8" y="4" width="5.5" height="2.2" rx="1.1" fill="#36C5F0"/><rect x="1.5" y="8.8" width="5.5" height="2.2" rx="1.1" fill="#ECB22E"/><rect x="8" y="8.8" width="5.5" height="2.2" rx="1.1" fill="#2EB67D"/></svg>'
+  },
+  netsuite: {
+    color: '#1B3A4B', bg: '#E8F0F5',
+    icon: '<svg width="15" height="15" viewBox="0 0 15 15" style="flex-shrink:0;vertical-align:middle;border-radius:3px"><rect width="15" height="15" rx="3" fill="#EB1D0E"/><text x="7.5" y="11" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="9" fill="white">N</text></svg>'
+  },
+  salesforce: {
+    color: '#0176D3', bg: '#E0F2FE',
+    icon: '<svg width="15" height="15" viewBox="0 0 100 70" style="flex-shrink:0;vertical-align:middle"><path d="M62 62H22C10 62 2 53 2 41 2 30 9 21 20 18 19 15 19 11 19 10 19 5 23 1 28 1 32 1 36 3 38 7 41 3 46 1 51 1 64 1 75 11 75 24 75 27 74 30 73 33 79 37 83 44 83 51 83 57 73 62 62 62Z" fill="#00A1E0"/></svg>'
+  },
+  workato_ai: {
+    color: '#2563EB', bg: '#EFF6FF',
+    icon: '<svg width="15" height="15" viewBox="0 0 15 15" style="flex-shrink:0;vertical-align:middle;border-radius:2px"><rect width="15" height="15" rx="2" fill="#2563EB"/><text x="7.5" y="11" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="8" fill="white">AI</text></svg>'
+  }
+};
+
+// ── TYPE config ───────────────────────────────────────────────
+const TYPE_CONFIG = {
+  workato:      { color: '#B45309', bg: '#FEF3C7', icon: '' },
+  workato_ai:   { color: '#2563EB', bg: '#EFF6FF', icon: '' },
+  apps_script:  { color: '#1967D2', bg: '#E8F0FE', icon: '' },
+  python_script:{ color: '#0369A1', bg: '#E0F2FE', icon: '' },
+  google_sheet: { color: '#166534', bg: '#DCFCE7', icon: '' },
+  google_drive_folder: { color: '#1D4ED8', bg: '#DBEAFE', icon: '' },
+  slack:        { color: '#4A154B', bg: '#F3E8FF', icon: '' },
+  netsuite:     { color: '#1B3A4B', bg: '#E8F0F5', icon: '' },
+  salesforce:   { color: '#0176D3', bg: '#E0F2FE', icon: '' },
+};
+
+const TYPE_BAR = {
+  workato:              '#F59E0B',
+  workato_ai:           '#3B82F6',
+  google_sheet:         '#22C55E',
+  google_drive_folder:  '#3B82F6',
+  apps_script:          '#4285F4',
+  python_script:        '#0EA5E9',
+  salesforce:           '#00A1E0',
+};
+
+const SVG = {
+  email: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
+  openApp: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>'
+};
+
+// ── Merge icon overrides into TYPE_CONFIG ─────────────────────
+(function() {
+  var ov = window.ICON_OVERRIDES || {};
+  Object.keys(ov).forEach(function(k) {
+    if (!TYPE_CONFIG[k]) TYPE_CONFIG[k] = { color: '#4B5563', bg: '#F3F4F6', icon: '' };
+    if (ov[k].color) TYPE_CONFIG[k].color = ov[k].color;
+    if (ov[k].bg)    TYPE_CONFIG[k].bg    = ov[k].bg;
+    if (ov[k].icon)  TYPE_CONFIG[k].icon  = ov[k].icon;
+  });
+})();
+
+// ── State ─────────────────────────────────────────────────────
+let AUTOMATIONS    = [];
+let activeCategory = 'All';
+let searchQuery    = '';
+
+// ── Load cards from server ────────────────────────────────────
+async function loadCards() {
+  try {
+    const res = await fetch('/api/cards', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Failed to load');
+    AUTOMATIONS = json.cards || [];
+    document.getElementById('loading-grid').style.display = 'none';
+    document.getElementById('cards').style.display = '';
+    init();
+  } catch (err) {
+    document.getElementById('loading-grid').style.display = 'none';
+    document.getElementById('cards').style.display = '';
+    document.getElementById('empty').style.display = 'block';
+    document.getElementById('empty').innerHTML =
+      '<div class="empty-state"><div class="empty-title">Could not load cards</div>' +
+      '<div class="empty-text">' + (err && err.message ? err.message : String(err)) + '</div></div>';
+  }
+}
+
+function init() {
+  const categories = ['All', ...new Set(AUTOMATIONS.map(a => a.category))];
+
+  function renderStats() {
+    const n = getFiltered().length;
+    document.getElementById('stats-bar').innerHTML =
+      '<div class="stat-item"><strong>' + n + '</strong> of ' + AUTOMATIONS.length + ' automations</div>' +
+      '<div class="stat-div"></div>' +
+      '<div class="stat-item"><strong>' + (categories.length - 1) + '</strong> categories</div>';
+  }
+
+  function renderTabs() {
+    document.getElementById('tabs').innerHTML = categories.map(cat => {
+      const n = cat === 'All' ? AUTOMATIONS.length : AUTOMATIONS.filter(a => a.category === cat).length;
+      return '<button class="tab' + (cat === activeCategory ? ' tab--active' : '') +
+             '" onclick="setCategory(\'' + cat.replace(/'/g, "\\'") + '\')">' +
+             cat + '<span class="tab-count">' + n + '</span></button>';
+    }).join('');
+  }
+
+  function getFiltered() {
+    const q = searchQuery;
+    return AUTOMATIONS.filter(a => {
+      const matchCat = activeCategory === 'All' || a.category === activeCategory;
+      const matchQ   = !q || [a.name, a.description, a.category, a.badge]
+        .some(s => s && s.toLowerCase().includes(q));
+      return matchCat && matchQ;
+    });
+  }
+
+  function renderCards() {
+    const filtered  = getFiltered();
+    const container = document.getElementById('cards');
+    const empty     = document.getElementById('empty');
+    renderStats();
+
+    if (!filtered.length) {
+      container.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    container.innerHTML = filtered.map(a => {
+      const tc  = TYPE_CONFIG[a.type] || { color: '#4B5563', bg: '#F3F4F6', icon: '' };
+      const bar = TYPE_BAR[a.type] || '#9CA3AF';
+      const appUrl = a.sheet_url || a.chat_url || a.slack_url || (a.url && a.url !== '#' ? a.url : '');
+      const toolBadges = (a.tools || []).map(t => {
+        const tt = TYPE_CONFIG[t];
+        return tt ? '<span class="badge" style="color:' + tt.color + ';background:' + tt.bg + '">' + (tt.icon || '') + t.charAt(0).toUpperCase() + t.slice(1) + '</span>' : '';
+      }).join('');
+
+      return '<div class="card">' +
+        '<div class="card-top-bar" style="background:' + bar + '"></div>' +
+        '<div class="card-body">' +
+          '<div class="card-badges">' +
+            '<span class="badge" style="color:' + tc.color + ';background:' + tc.bg + '">' + (tc.icon || '') + (a.badge || '') + '</span>' +
+            toolBadges +
+          '</div>' +
+          '<h3 class="card-title">' + (a.name || '') + '</h3>' +
+          '<div class="card-desc">' + (a.description || '') + '</div>' +
+          '<div class="card-footer">' +
+            '<div class="card-meta">' +
+              (a.business_owner && a.business_owner.length
+                ? '<span class="meta-item">' + SVG.email + ' ' +
+                  (Array.isArray(a.business_owner) ? a.business_owner : [a.business_owner])
+                    .map(e => '<a href="mailto:' + e + '" style="color:inherit;text-decoration:underline dotted">' + e + '</a>')
+                    .join(', ') + '</span>'
+                : '') +
+            '</div>' +
+            '<div class="card-actions">' +
+              (appUrl
+                ? '<a class="btn-open" href="' + appUrl + '" target="_blank" rel="noopener noreferrer">' +
+                  SVG.openApp + ' Open App</a>'
+                : '') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  window.setCategory = function(cat) {
+    activeCategory = cat;
+    renderTabs();
+    renderCards();
+  };
+
+  document.getElementById('search').addEventListener('input', function(e) {
+    searchQuery = e.target.value.toLowerCase().trim();
+    renderCards();
+  });
+
+  renderTabs();
+  renderCards();
+}
+
+// Start loading when page is ready
+window.addEventListener('load', loadCards);
+</script>
+</body>
+</html>

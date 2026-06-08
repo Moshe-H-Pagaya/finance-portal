@@ -1,0 +1,493 @@
+// =============================================================================
+// Finance AI & Automation Portal — Express server
+// =============================================================================
+// 1:1 port of the original Google Apps Script Code.gs, plus:
+//   • Identity comes from the X-Goog-Authenticated-User-Email header injected
+//     by Cloud IAP (replaces Session.getActiveUser().getEmail()).
+//   • Data still lives in cell A1 of the Cards tab in the Google Sheet,
+//     accessed via the Sheets API with the runtime service account.
+//   • Admin allowlist moved from a hardcoded array to env (ADMIN_EMAILS).
+// =============================================================================
+
+import express, { type Request, type Response, type NextFunction } from "express";
+import path from "node:path";
+import fs from "node:fs";
+import { google, type sheets_v4 } from "googleapis";
+import { Storage } from "@google-cloud/storage";
+
+// ── Config ──────────────────────────────────────────────────────────────────
+const PORT = Number(process.env.PORT) || 3000;
+const SHEET_ID = process.env.CARDS_SHEET_ID || "";
+const SHEET_TAB = process.env.CARDS_SHEET_TAB || "Cards";
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+const AUTH_MODE = (process.env.AUTH_MODE || "iap").toLowerCase();
+const DEV_USER_EMAIL = (process.env.DEV_USER_EMAIL || "").toLowerCase();
+
+// Shared-secret admin login used by the HTTP Basic Auth gate on /admin*.
+// Cloud Armor already restricts who can reach the LB; this adds a
+// username/password prompt on top so even an allowed-network user has to
+// prove they're the admin before reaching the management UI.
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+const ADMIN_AUTH_REALM = process.env.ADMIN_AUTH_REALM || "Finance Portal Admin";
+
+// When SHEET_PUBLIC=true, the sheet is shared as "Anyone with the link, Viewer"
+// and we read it via the public gviz endpoint. No SA auth needed. Writes are
+// disabled in this mode (the admin would edit the sheet directly in Google
+// Sheets UI). When false (default), we authenticate to the Sheets API as the
+// Cloud Run runtime SA — the sheet must be shared with that SA as Editor.
+const SHEET_PUBLIC = (process.env.SHEET_PUBLIC || "").toLowerCase() === "true";
+
+// GCS-backed storage for cards. When CARDS_GCS_BUCKET is set, the Express
+// app reads and writes a single JSON object in that bucket. Runtime SA needs
+// roles/storage.objectAdmin on the bucket. This is the path used when the
+// portal must allow /admin writes but org policy blocks sharing Sheets with
+// the SA email — the same pattern as uploads-report-app.
+const CARDS_GCS_BUCKET = process.env.CARDS_GCS_BUCKET || "";
+const CARDS_GCS_OBJECT = process.env.CARDS_GCS_OBJECT || "cards.json";
+
+// Decide where card data comes from, in priority order:
+//   1. CARDS_GCS_BUCKET set → GCS object (read + write supported)
+//   2. CARDS_SHEET_ID set + SHEET_PUBLIC=true → public gviz endpoint (read only)
+//   3. CARDS_SHEET_ID set + SHEET_PUBLIC=false → authenticated Sheets API (SA)
+//   4. None of the above → bundled file <static>/cards.json (read only)
+if (CARDS_GCS_BUCKET) {
+  console.log(
+    `[startup] Cards storage: GCS gs://${CARDS_GCS_BUCKET}/${CARDS_GCS_OBJECT}`,
+  );
+} else if (SHEET_ID) {
+  console.log(
+    `[startup] Cards storage: Google Sheet ${SHEET_ID} (public=${SHEET_PUBLIC})`,
+  );
+} else {
+  console.warn(
+    "[startup] Cards storage: bundled cards.json (read-only; set CARDS_GCS_BUCKET for admin writes).",
+  );
+}
+if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
+  console.warn(
+    "[startup] ADMIN_USERNAME / ADMIN_PASSWORD not set — /admin will refuse ALL requests.",
+  );
+}
+
+// ── Google Sheets client (lazy, singleton) ──────────────────────────────────
+let sheetsClient: sheets_v4.Sheets | null = null;
+async function sheets(): Promise<sheets_v4.Sheets> {
+  if (sheetsClient) return sheetsClient;
+  const auth = new google.auth.GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  sheetsClient = google.sheets({ version: "v4", auth: await auth.getClient() as any });
+  return sheetsClient;
+}
+
+// ── Google Cloud Storage client (lazy, singleton) ──────────────────────────
+let gcsClient: Storage | null = null;
+function gcs(): Storage {
+  if (gcsClient) return gcsClient;
+  gcsClient = new Storage();
+  return gcsClient;
+}
+
+// ── Storage helpers (A1 of <SHEET_TAB> holds a JSON-encoded array) ──────────
+interface Card {
+  id: string;
+  name?: string;
+  category?: string;
+  description?: string;
+  type?: string;
+  badge?: string;
+  url?: string;
+  sheet_url?: string;
+  chat_url?: string;
+  slack_url?: string;
+  tools?: string[];
+  business_owner?: string[];
+}
+
+async function readCards(): Promise<Card[]> {
+  // Priority 1: GCS object (read+write).
+  if (CARDS_GCS_BUCKET) {
+    return readCardsFromGcs();
+  }
+  // Priority 2: Google Sheet.
+  if (SHEET_ID) {
+    const raw = SHEET_PUBLIC
+      ? await readCellPublic(SHEET_ID, SHEET_TAB, "A1")
+      : await readCellPrivate(SHEET_ID, SHEET_TAB, "A1");
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      console.error("[readCards] Cell A1 is not valid JSON:", err);
+      return [];
+    }
+  }
+  // Priority 3: bundled-file mode.
+  return readCardsFromFile();
+}
+
+// GCS read. On first call (or when the object is missing) we seed the bucket
+// with whatever is in the bundled cards.json. This makes the first deploy
+// "just work" — admins can immediately edit, and we don't need a separate
+// seeding step.
+async function readCardsFromGcs(): Promise<Card[]> {
+  const file = gcs().bucket(CARDS_GCS_BUCKET).file(CARDS_GCS_OBJECT);
+  try {
+    const [buf] = await file.download();
+    const parsed = JSON.parse(buf.toString("utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err: any) {
+    if (err?.code === 404) {
+      // First-run seed from the bundled cards.json.
+      const seed = readCardsFromFile();
+      console.log(
+        `[readCardsFromGcs] gs://${CARDS_GCS_BUCKET}/${CARDS_GCS_OBJECT} missing; seeding from bundled file (${seed.length} cards)`,
+      );
+      try {
+        await writeCardsToGcs(seed);
+      } catch (seedErr) {
+        console.error("[readCardsFromGcs] seed write failed:", seedErr);
+      }
+      return seed;
+    }
+    console.error("[readCardsFromGcs] download failed:", err);
+    throw err;
+  }
+}
+
+// Resolves cards.json from the same directory the static assets live in.
+// Walks the same candidate list as resolveStaticDir() so dev (./public) and
+// prod (./dist/public) both work, without depending on STATIC_DIR being
+// defined yet at this point in the file.
+function resolveCardsFile(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "dist", "public", "cards.json"),
+    path.resolve(process.cwd(), "public", "cards.json"),
+  ];
+  for (const c of candidates) if (fs.existsSync(c)) return c;
+  return candidates[candidates.length - 1];
+}
+
+function readCardsFromFile(): Card[] {
+  const file = resolveCardsFile();
+  try {
+    const raw = fs.readFileSync(file, "utf8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error(`[readCardsFromFile] failed to read ${file}:`, err);
+    return [];
+  }
+}
+
+// Private path: authenticated read via the Sheets v4 API as the runtime SA.
+// Requires the sheet to be shared with the SA.
+async function readCellPrivate(
+  spreadsheetId: string,
+  tab: string,
+  cell: string,
+): Promise<string> {
+  const api = await sheets();
+  const res = await api.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${tab}!${cell}`,
+  });
+  const v = res.data.values?.[0]?.[0];
+  return typeof v === "string" ? v : "";
+}
+
+// Public path: anonymous read via the gviz endpoint. Works when the sheet is
+// shared as "Anyone with the link". Returns the raw cell content as a string.
+// gviz returns a wrapped JSON like:
+//   /*O_o*/ google.visualization.Query.setResponse({...,"table":{"rows":[{"c":[{"v":"..."}]}]}});
+async function readCellPublic(
+  spreadsheetId: string,
+  tab: string,
+  cell: string,
+): Promise<string> {
+  const url =
+    `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq` +
+    `?sheet=${encodeURIComponent(tab)}&range=${encodeURIComponent(cell)}` +
+    `&tqx=out:json`;
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) {
+    throw new Error(`gviz request failed: HTTP ${res.status}`);
+  }
+  const text = await res.text();
+  const m = text.match(/google\.visualization\.Query\.setResponse\((.*)\);?\s*$/);
+  if (!m) throw new Error("gviz response not in expected shape");
+  const payload = JSON.parse(m[1]);
+  const v = payload?.table?.rows?.[0]?.c?.[0]?.v;
+  if (typeof v === "string") return v;
+  // gviz may return structured cell values as objects rather than strings.
+  if (v != null) return JSON.stringify(v);
+  return "";
+}
+
+async function writeCards(cards: Card[]): Promise<void> {
+  if (CARDS_GCS_BUCKET) {
+    await writeCardsToGcs(cards);
+    return;
+  }
+  if (!SHEET_ID) {
+    throw new Error(
+      "Write disabled: no persistent storage configured. " +
+        "Set CARDS_GCS_BUCKET to enable admin writes, or edit public/cards.json " +
+        "in the source repo and redeploy.",
+    );
+  }
+  if (SHEET_PUBLIC) {
+    // In public-read mode we can't write back via the public gviz endpoint.
+    // Admins edit the sheet directly in Google Sheets UI. Surface a clear
+    // 4xx-ish error instead of a confusing API auth failure.
+    throw new Error(
+      "Write disabled: sheet is configured as public-read (SHEET_PUBLIC=true). " +
+        "Edit cards directly in the Google Sheet, or set CARDS_GCS_BUCKET / share " +
+        "the sheet with the runtime SA as Editor.",
+    );
+  }
+  const api = await sheets();
+  await api.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${SHEET_TAB}!A1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[JSON.stringify(cards)]] },
+  });
+}
+
+async function writeCardsToGcs(cards: Card[]): Promise<void> {
+  const file = gcs().bucket(CARDS_GCS_BUCKET).file(CARDS_GCS_OBJECT);
+  await file.save(JSON.stringify(cards, null, 2), {
+    contentType: "application/json",
+    // GCS Object Versioning gives us history; we don't need to manage
+    // generations explicitly here.
+    resumable: false,
+  });
+}
+
+// ── Identity & admin gate ───────────────────────────────────────────────────
+function getUserEmail(req: Request): string {
+  if (AUTH_MODE === "dev") return DEV_USER_EMAIL;
+  // Cloud IAP injects this header on every authenticated request.
+  // Format: "accounts.google.com:user@pagaya.com" — we strip the prefix.
+  const raw = req.header("X-Goog-Authenticated-User-Email") || "";
+  const idx = raw.indexOf(":");
+  return (idx >= 0 ? raw.slice(idx + 1) : raw).toLowerCase();
+}
+
+function isAdmin(email: string): boolean {
+  return !!email && ADMIN_EMAILS.includes(email);
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const email = getUserEmail(req);
+  if (!isAdmin(email)) {
+    res.status(403).json({ ok: false, error: "Not authorised" });
+    return;
+  }
+  next();
+}
+
+// Constant-time string compare to avoid leaking the password via timing.
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function parseBasicAuth(header: string | undefined): { user: string; pass: string } | null {
+  if (!header || !header.toLowerCase().startsWith("basic ")) return null;
+  const decoded = Buffer.from(header.slice(6).trim(), "base64").toString("utf8");
+  const idx = decoded.indexOf(":");
+  if (idx < 0) return null;
+  return { user: decoded.slice(0, idx), pass: decoded.slice(idx + 1) };
+}
+
+// HTTP Basic Auth gate for /admin pages and admin-write APIs.
+// When credentials are missing/wrong, returns 401 with WWW-Authenticate so
+// the browser shows its native login dialog. With credentials present and
+// matching ADMIN_USERNAME/ADMIN_PASSWORD, the request passes through.
+function requireBasicAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
+    res.status(503).json({ ok: false, error: "Admin auth not configured" });
+    return;
+  }
+  const creds = parseBasicAuth(req.header("authorization"));
+  if (
+    creds &&
+    safeEqual(creds.user, ADMIN_USERNAME) &&
+    safeEqual(creds.pass, ADMIN_PASSWORD)
+  ) {
+    next();
+    return;
+  }
+  res.set("WWW-Authenticate", `Basic realm="${ADMIN_AUTH_REALM}", charset="UTF-8"`);
+  res.status(401).send("Authentication required");
+}
+
+// ── App ─────────────────────────────────────────────────────────────────────
+const app = express();
+app.set("trust proxy", true);
+app.use(express.json({ limit: "1mb" }));
+
+// Tiny request log for Cloud Logging
+app.use((req, _res, next) => {
+  if (req.path.startsWith("/api/")) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  }
+  next();
+});
+
+// ── API: cards ──────────────────────────────────────────────────────────────
+// GET /api/cards — everyone behind IAP can read (matches portal.html)
+// Falls back to the bundled cards.json when no sheet is configured.
+app.get("/api/cards", async (_req, res) => {
+  try {
+    res.json({ ok: true, cards: await readCards() });
+  } catch (err: any) {
+    console.error("[GET /api/cards]", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// GET /api/me — for the admin UI to know who's logged in / whether they're admin
+app.get("/api/me", (req, res) => {
+  const email = getUserEmail(req);
+  res.json({ ok: true, email, admin: isAdmin(email) });
+});
+
+// POST /api/cards — upsert (admin only). Matches updateCard() in Code.gs.
+// Gated by HTTP Basic Auth so the admin UI's fetch() calls re-use the
+// browser's stored credentials.
+app.post("/api/cards", requireBasicAuth, async (req, res) => {
+  try {
+    const card = req.body as Card;
+    if (!card || typeof card !== "object" || !card.id) {
+      res.status(400).json({ ok: false, error: "Card must include an id" });
+      return;
+    }
+    const cards = await readCards();
+    const idx = cards.findIndex((c) => c.id === card.id);
+    if (idx >= 0) cards[idx] = card;
+    else cards.push(card);
+    await writeCards(cards);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[POST /api/cards]", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// DELETE /api/cards/:id — admin only. Matches deleteCard() in Code.gs.
+app.delete("/api/cards/:id", requireBasicAuth, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const cards = (await readCards()).filter((c) => c.id !== id);
+    await writeCards(cards);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[DELETE /api/cards/:id]", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// POST /api/cards/reorder — admin only. Matches reorderCards() in Code.gs.
+app.post("/api/cards/reorder", requireBasicAuth, async (req, res) => {
+  try {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids)) {
+      res.status(400).json({ ok: false, error: "Body must be { ids: string[] }" });
+      return;
+    }
+    const cards = await readCards();
+    const byId = new Map(cards.map((c) => [c.id, c] as const));
+    const reordered = ids
+      .map((id: unknown) => (typeof id === "string" ? byId.get(id) : undefined))
+      .filter((c): c is Card => !!c);
+    // Tack on any cards whose ids weren't in the reorder list to be safe
+    for (const c of cards) if (!ids.includes(c.id)) reordered.push(c);
+    await writeCards(reordered);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[POST /api/cards/reorder]", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// ── Static + page routes ────────────────────────────────────────────────────
+// Resolve the static dir at runtime so it works both in dev (./public) and
+// in the built bundle (./dist/public next to dist/server.cjs).
+function resolveStaticDir(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "dist", "public"), // production: node dist/server.cjs from repo root
+    path.resolve(process.cwd(), "public"),         // dev: tsx server.ts from repo root
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, "portal.html"))) return c;
+  }
+  return candidates[candidates.length - 1];
+}
+const STATIC_DIR = resolveStaticDir();
+
+// Healthcheck (Cloud Run uses this implicitly)
+app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+// Admin gate runs BEFORE the static middleware. Covers both the pretty paths
+// (/admin, /admin-form) and the raw filenames (/admin.html, /admin-form.html)
+// so the gate can't be bypassed by guessing the file name.
+//
+// Two layers:
+//   1. requireBasicAuth — browser-native username/password prompt. Anyone
+//      who can't supply ADMIN_USERNAME/ADMIN_PASSWORD gets 401 and the
+//      dialog re-prompts.
+//   2. Optional email allowlist (ADMIN_EMAILS) — only kicks in when an
+//      identity header is present (Cloud IAP mode). With Basic Auth alone
+//      we just trust the shared secret.
+const ADMIN_PATHS = [
+  "/admin", "/admin/", "/admin.html",
+  "/admin-form", "/admin-form/", "/admin-form.html",
+];
+app.get(ADMIN_PATHS, requireBasicAuth, (req, res, next) => {
+  if (ADMIN_EMAILS.length === 0) {
+    next();
+    return;
+  }
+  const email = getUserEmail(req);
+  if (!isAdmin(email)) {
+    res.status(403).sendFile(path.join(STATIC_DIR, "access-denied.html"));
+    return;
+  }
+  next();
+});
+
+// Explicit page routes for the pretty paths.
+app.get(["/admin", "/admin/", "/admin.html"], (_req, res) =>
+  res.sendFile(path.join(STATIC_DIR, "admin.html")),
+);
+app.get(["/admin-form", "/admin-form/", "/admin-form.html"], (_req, res) =>
+  res.sendFile(path.join(STATIC_DIR, "admin-form.html")),
+);
+
+// Root → portal (also expose /portal.html for symmetry)
+app.get(["/", "/portal.html"], (_req, res) =>
+  res.sendFile(path.join(STATIC_DIR, "portal.html")),
+);
+
+// Static assets last — only serves files we haven't already routed above.
+// `extensions` is intentionally NOT set.
+app.use(express.static(STATIC_DIR));
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(
+    `[startup] finance-portal listening on :${PORT} ` +
+      `(auth=${AUTH_MODE}, sheet=${SHEET_ID ? "configured" : "MISSING"}, ` +
+      `sheetPublic=${SHEET_PUBLIC}, admins=${ADMIN_EMAILS.length})`,
+  );
+});
