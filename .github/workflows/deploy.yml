@@ -10,6 +10,7 @@ env:
   REGION: us-east1
   SERVICE: finance-portal
   REPO: finance-portal
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
