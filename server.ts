@@ -331,6 +331,22 @@ function requireBasicAuth(req: Request, res: Response, next: NextFunction): void
   res.status(401).send("Authentication required");
 }
 
+// Combined guard for admin write API endpoints: Basic Auth + optional email
+// allowlist check (matches the two-layer check already on the admin pages).
+// When ADMIN_EMAILS is empty the email check is skipped so existing deploys
+// with no allowlist configured continue to work exactly as before.
+function requireAdminAccess(req: Request, res: Response, next: NextFunction): void {
+  requireBasicAuth(req, res, () => {
+    if (ADMIN_EMAILS.length === 0) { next(); return; }
+    const email = getUserEmail(req);
+    if (!isAdmin(email)) {
+      res.status(403).json({ ok: false, error: "Not authorised" });
+      return;
+    }
+    next();
+  });
+}
+
 // ── App ─────────────────────────────────────────────────────────────────────
 const app = express();
 app.set("trust proxy", true);
@@ -365,7 +381,7 @@ app.get("/api/me", (req, res) => {
 // POST /api/cards — upsert (admin only). Matches updateCard() in Code.gs.
 // Gated by HTTP Basic Auth so the admin UI's fetch() calls re-use the
 // browser's stored credentials.
-app.post("/api/cards", requireBasicAuth, async (req, res) => {
+app.post("/api/cards", requireAdminAccess, async (req, res) => {
   try {
     const card = req.body as Card;
     if (!card || typeof card !== "object" || !card.id) {
@@ -385,7 +401,7 @@ app.post("/api/cards", requireBasicAuth, async (req, res) => {
 });
 
 // DELETE /api/cards/:id — admin only. Matches deleteCard() in Code.gs.
-app.delete("/api/cards/:id", requireBasicAuth, async (req, res) => {
+app.delete("/api/cards/:id", requireAdminAccess, async (req, res) => {
   try {
     const id = req.params.id;
     const cards = (await readCards()).filter((c) => c.id !== id);
@@ -398,7 +414,7 @@ app.delete("/api/cards/:id", requireBasicAuth, async (req, res) => {
 });
 
 // POST /api/cards/reorder — admin only. Matches reorderCards() in Code.gs.
-app.post("/api/cards/reorder", requireBasicAuth, async (req, res) => {
+app.post("/api/cards/reorder", requireAdminAccess, async (req, res) => {
   try {
     const ids = req.body?.ids;
     if (!Array.isArray(ids)) {
