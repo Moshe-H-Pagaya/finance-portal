@@ -15,6 +15,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { google, type sheets_v4 } from "googleapis";
 import { Storage } from "@google-cloud/storage";
+import { VertexAI } from "@google-cloud/vertexai";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3000;
@@ -438,6 +439,114 @@ app.post("/api/cards/reorder", requireAdminAccess, async (req, res) => {
     res.json({ ok: true });
   } catch (err: any) {
     console.error("[POST /api/cards/reorder]", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// ── API: SOX single-control analysis (called by Workato) ────────────────────
+// POST /api/sox-analyze — admin-only endpoint.
+// Body (JSON):
+//   {
+//     controlId:        string          // e.g. "SOX-042"
+//     controlName:      string          // short display name
+//     controlObjective: string          // what the control verifies
+//     evidence: [                       // zero or more evidence files
+//       { name: string, mimeType: string, data: string }  // data = base64
+//     ]
+//   }
+// Response:
+//   { ok: true, verdict: "Passed"|"Failed", gaps: string[], summary: string }
+
+const GEMINI_PROJECT  = process.env.SOX_JOB_PROJECT  || "finance-ai-497313";
+const GEMINI_LOCATION = process.env.SOX_JOB_REGION   || "us-east1";
+const GEMINI_MODEL    = process.env.GEMINI_MODEL      || "gemini-2.0-flash-001";
+
+const SOX_SYSTEM_INSTRUCTION = `You are a SOX (Sarbanes-Oxley) compliance auditor.
+Your job is to review evidence files for an internal control and determine whether
+it is operating effectively. Be precise and concise. Avoid vague statements.
+Respond ONLY with a valid JSON object — no markdown, no prose outside the JSON.`;
+
+const SOX_PROMPT_TEMPLATE = (
+  controlId: string,
+  controlName: string,
+  controlObjective: string,
+) => `CONTROL DETAILS
+Control ID:        ${controlId}
+Control Name:      ${controlName}
+Control Objective: ${controlObjective || "(not specified)"}
+
+INSTRUCTIONS
+1. Review all attached evidence files carefully.
+2. Determine whether the evidence shows the control is operating effectively.
+3. If the control is failing, list specific, actionable gaps.
+
+RESPONSE FORMAT (JSON only):
+{
+  "verdict": "Passed" or "Failed",
+  "gaps": ["gap 1", "gap 2"],
+  "summary": "One or two sentence summary"
+}
+
+If no evidence files were provided, respond with:
+{"verdict":"Failed","gaps":["No evidence files provided"],"summary":"Unable to test — no evidence uploaded"}`;
+
+app.post("/api/sox-analyze", requireAdminAccess, async (req, res) => {
+  try {
+    const { controlId = "", controlName = "", controlObjective = "", evidence = [] } =
+      req.body as {
+        controlId?: string;
+        controlName?: string;
+        controlObjective?: string;
+        evidence?: Array<{ name: string; mimeType: string; data: string }>;
+      };
+
+    if (!controlId) {
+      res.status(400).json({ ok: false, error: "controlId is required" });
+      return;
+    }
+
+    const vertexai = new VertexAI({ project: GEMINI_PROJECT, location: GEMINI_LOCATION });
+    const model = vertexai.getGenerativeModel({
+      model: GEMINI_MODEL,
+      systemInstruction: SOX_SYSTEM_INSTRUCTION,
+    });
+
+    const parts: import("@google-cloud/vertexai").Part[] = [
+      { text: SOX_PROMPT_TEMPLATE(controlId, controlName, controlObjective) },
+    ];
+
+    for (const ef of evidence) {
+      if (!ef.data) continue;
+      parts.push({
+        inlineData: {
+          mimeType: ef.mimeType || "application/octet-stream",
+          data: ef.data, // already base64 from Workato
+        },
+      });
+    }
+
+    const result = await model.generateContent({ contents: [{ role: "user", parts }] });
+    let raw = result.response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+
+    // Strip markdown code fences if model wraps output
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) raw = fenceMatch[1].trim();
+
+    let parsed: { verdict: string; gaps: string[]; summary: string };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      console.error("[POST /api/sox-analyze] Gemini returned non-JSON:", raw.slice(0, 300));
+      parsed = {
+        verdict: "Failed",
+        gaps: ["Agent error: could not parse model response"],
+        summary: raw.slice(0, 200),
+      };
+    }
+
+    res.json({ ok: true, ...parsed });
+  } catch (err: any) {
+    console.error("[POST /api/sox-analyze]", err);
     res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });
