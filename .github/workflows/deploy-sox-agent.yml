@@ -1,0 +1,80 @@
+name: Build and deploy SOX Agent (Cloud Run Job)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sox-agent/**"
+      - ".github/workflows/deploy-sox-agent.yml"
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: finance-ai-497313
+  REGION: us-east1
+  JOB: sox-agent
+  REPO: finance-portal
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/sox-agent:${{ github.sha }}"
+          docker build -t "$IMAGE" ./sox-agent
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Create or update Cloud Run Job
+        run: |
+          # Check if the job already exists
+          if gcloud run jobs describe ${{ env.JOB }} \
+              --project=${{ env.PROJECT_ID }} \
+              --region=${{ env.REGION }} \
+              --quiet 2>/dev/null; then
+            # Update existing job
+            gcloud run jobs update ${{ env.JOB }} \
+              --project=${{ env.PROJECT_ID }} \
+              --region=${{ env.REGION }} \
+              --image="$IMAGE" \
+              --service-account=finance-portal-run@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --set-env-vars="GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ env.REGION }}" \
+              --quiet
+          else
+            # Create new job
+            gcloud run jobs create ${{ env.JOB }} \
+              --project=${{ env.PROJECT_ID }} \
+              --region=${{ env.REGION }} \
+              --image="$IMAGE" \
+              --service-account=finance-portal-run@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --set-env-vars="GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ env.REGION }}" \
+              --task-timeout=30m \
+              --quiet
+          fi
+
+      - name: Print job details
+        run: |
+          gcloud run jobs describe ${{ env.JOB }} \
+            --project=${{ env.PROJECT_ID }} \
+            --region=${{ env.REGION }} \
+            --format='value(name,status.latestCreatedExecution.name)'

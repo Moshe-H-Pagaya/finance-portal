@@ -9,6 +9,7 @@
 //   • Admin allowlist moved from a hardcoded array to env (ADMIN_EMAILS).
 // =============================================================================
 
+import { execFile } from "node:child_process";
 import express, { type Request, type Response, type NextFunction } from "express";
 import path from "node:path";
 import fs from "node:fs";
@@ -40,6 +41,11 @@ const ADMIN_AUTH_REALM = process.env.ADMIN_AUTH_REALM || "Finance Portal Admin";
 // Sheets UI). When false (default), we authenticate to the Sheets API as the
 // Cloud Run runtime SA — the sheet must be shared with that SA as Editor.
 const SHEET_PUBLIC = (process.env.SHEET_PUBLIC || "").toLowerCase() === "true";
+
+// SOX Agent Cloud Run Job — triggered via POST /api/sox-run (admin only)
+const SOX_JOB_NAME = process.env.SOX_JOB_NAME || "sox-agent";
+const SOX_JOB_REGION = process.env.SOX_JOB_REGION || "us-east1";
+const SOX_JOB_PROJECT = process.env.SOX_JOB_PROJECT || "finance-ai-497313";
 
 // GCS-backed storage for cards. When CARDS_GCS_BUCKET is set, the Express
 // app reads and writes a single JSON object in that bucket. Runtime SA needs
@@ -434,6 +440,48 @@ app.post("/api/cards/reorder", requireAdminAccess, async (req, res) => {
     console.error("[POST /api/cards/reorder]", err);
     res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
+});
+
+// ── API: SOX agent trigger ───────────────────────────────────────────────────
+// POST /api/sox-run — triggers the sox-agent Cloud Run Job (admin only).
+// Returns immediately with the execution ID; the job runs asynchronously.
+app.post("/api/sox-run", requireAdminAccess, async (req, res) => {
+  if (!SOX_JOB_NAME) {
+    res.status(503).json({ ok: false, error: "SOX_JOB_NAME not configured" });
+    return;
+  }
+
+  // Build the gcloud command. We override env vars from the request body if
+  // provided, so the admin can target a different sheet without redeploying.
+  const overrides: string[] = [];
+  const body = req.body as Record<string, string> | undefined;
+  if (body?.spreadsheetId) overrides.push(`SOX_SPREADSHEET_ID=${body.spreadsheetId}`);
+  if (body?.driveFolderId) overrides.push(`SOX_DRIVE_FOLDER_ID=${body.driveFolderId}`);
+  if (body?.dryRun === "true") overrides.push("DRY_RUN=true");
+
+  const args = [
+    "run", "jobs", "execute", SOX_JOB_NAME,
+    `--project=${SOX_JOB_PROJECT}`,
+    `--region=${SOX_JOB_REGION}`,
+    "--async",
+    "--format=json",
+  ];
+  if (overrides.length) args.push(`--update-env-vars=${overrides.join(",")}`);
+
+  execFile("gcloud", args, { timeout: 30_000 }, (err, stdout, stderr) => {
+    if (err) {
+      console.error("[POST /api/sox-run] gcloud error:", stderr || err.message);
+      res.status(500).json({ ok: false, error: stderr || err.message });
+      return;
+    }
+    try {
+      const out = JSON.parse(stdout);
+      const executionId = out?.metadata?.name || out?.name || stdout.trim();
+      res.json({ ok: true, executionId });
+    } catch {
+      res.json({ ok: true, executionId: stdout.trim() });
+    }
+  });
 });
 
 // ── Static + page routes ────────────────────────────────────────────────────
