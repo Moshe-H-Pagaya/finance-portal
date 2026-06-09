@@ -21,8 +21,71 @@ function onOpen() {
     .addItem('Run SOX Tests', 'runSoxTests')
     .addSeparator()
     .addItem('Configure (API key & folder)', 'showConfig')
+    .addItem('Diagnose (show column map)', 'diagnose')
     .addItem('About', 'showAbout')
     .addToUi();
+}
+
+function diagnose() {
+  var props   = PropertiesService.getScriptProperties();
+  var tabName = props.getProperty('SOX_SHEET_TAB') || 'Sheet1';
+  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet   = ss.getSheetByName(tabName);
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('Sheet tab "' + tabName + '" not found.\nAvailable tabs: ' +
+      ss.getSheets().map(function(s){ return s.getName(); }).join(', '));
+    return;
+  }
+
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+                  .map(function(h){ return String(h).trim(); });
+
+  function findCol() {
+    var kws = Array.prototype.slice.call(arguments);
+    for (var i = 0; i < headers.length; i++) {
+      var h = headers[i].toLowerCase();
+      if (kws.every(function(kw){ return h.indexOf(kw.toLowerCase()) >= 0; })) return i;
+    }
+    return -1;
+  }
+
+  var C = {
+    controlId : findCol('control', 'id'),
+    name      : findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name'),
+    run       : findCol('run'),
+    result    : findCol('result') >= 0 ? findCol('result') : (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
+    gaps      : findCol('gap') >= 0 ? findCol('gap') : (findCol('notes') >= 0 ? findCol('notes') : findCol('finding')),
+    lastRun   : findCol('last run') >= 0 ? findCol('last run') : (findCol('timestamp') >= 0 ? findCol('timestamp') : findCol('date')),
+  };
+
+  // Count Run=Yes rows
+  var data = sheet.getDataRange().getValues();
+  var yesCount = 0;
+  var runValues = [];
+  for (var i = 1; i < Math.min(data.length, 6); i++) {
+    if (C.run >= 0) runValues.push('"' + data[i][C.run] + '"');
+  }
+  if (C.run >= 0) {
+    for (var i = 1; i < data.length; i++) {
+      var v = String(data[i][C.run]).toLowerCase().trim();
+      if (v === 'yes' || v === 'y') yesCount++;
+    }
+  }
+
+  var msg = 'Tab: "' + tabName + '" (' + (data.length - 1) + ' data rows)\n\n' +
+    'Column mapping:\n' +
+    '  Control ID  : ' + (C.controlId >= 0  ? headers[C.controlId]  + ' (col ' + (C.controlId+1)  + ')' : 'NOT FOUND') + '\n' +
+    '  Control Name: ' + (C.name >= 0       ? headers[C.name]       + ' (col ' + (C.name+1)       + ')' : 'NOT FOUND') + '\n' +
+    '  Run?        : ' + (C.run >= 0        ? headers[C.run]        + ' (col ' + (C.run+1)        + ')' : 'NOT FOUND') + '\n' +
+    '  Result      : ' + (C.result >= 0     ? headers[C.result]     + ' (col ' + (C.result+1)     + ')' : 'NOT FOUND') + '\n' +
+    '  Gaps/Notes  : ' + (C.gaps >= 0       ? headers[C.gaps]       + ' (col ' + (C.gaps+1)       + ')' : 'NOT FOUND') + '\n' +
+    '  Last Run    : ' + (C.lastRun >= 0    ? headers[C.lastRun]    + ' (col ' + (C.lastRun+1)    + ')' : 'NOT FOUND') + '\n\n' +
+    'Rows with Run = Yes: ' + yesCount + '\n' +
+    'First Run column values: ' + (runValues.length ? runValues.join(', ') : 'n/a') + '\n\n' +
+    'All headers:\n' + headers.map(function(h,i){ return '  ' + (i+1) + ': ' + h; }).join('\n');
+
+  SpreadsheetApp.getUi().alert(msg);
 }
 
 // -- Configuration dialog ------------------------------------------------------
