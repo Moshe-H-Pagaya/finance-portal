@@ -61,6 +61,32 @@
     }
     .field textarea { resize: vertical; min-height: 90px; }
     .hint { font-size: 11px; color: var(--muted); }
+    .rte-wrap { border: 1px solid var(--gray-200); border-radius: 7px; overflow: hidden; transition: border-color var(--transition), box-shadow var(--transition); }
+    .rte-wrap:focus-within { border-color: #93C5FD; box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
+    .rte-toolbar {
+      display: flex; gap: 2px; padding: 6px 8px;
+      background: var(--gray-50); border-bottom: 1px solid var(--gray-200);
+    }
+    .rte-btn {
+      padding: 4px 9px; border: 1px solid transparent; border-radius: 5px;
+      font-size: 13px; font-family: inherit; cursor: pointer;
+      background: transparent; color: var(--text);
+      transition: all var(--transition); line-height: 1.4;
+    }
+    .rte-btn:hover { background: var(--gray-200); }
+    .rte-btn.active { background: #DBEAFE; color: #1D4ED8; border-color: #BFDBFE; }
+    .rte-btn b { font-weight: 700; }
+    .rte-btn i { font-style: italic; }
+    .rte-btn code { font-family: monospace; font-size: 12px; }
+    .rte-sep { width: 1px; background: var(--gray-200); margin: 2px 4px; }
+    .rte-editor {
+      padding: 9px 12px; font-size: 13px; font-family: inherit;
+      min-height: 120px; outline: none; color: var(--text);
+      line-height: 1.6;
+    }
+    .rte-editor:empty::before { content: attr(data-placeholder); color: var(--gray-400); pointer-events: none; }
+    .rte-editor ul { padding-left: 20px; }
+    .rte-editor code { background: var(--gray-100); padding: 1px 5px; border-radius: 4px; font-family: monospace; font-size: 12px; }
     .platform-toggle { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
     .platform-toggle input[type=radio] { position: absolute; opacity: 0; pointer-events: none; }
     .platform-toggle label {
@@ -172,8 +198,19 @@
       <div class="section-title">Description</div>
       <div class="field">
         <label>Description *</label>
-        <textarea id="f-description" rows="5" placeholder="Describe what this automation does…" required></textarea>
-        <span class="hint">You may use basic HTML: &lt;strong&gt;, &lt;em&gt;, &lt;code&gt;, &lt;ul&gt;, &lt;li&gt;</span>
+        <div class="rte-wrap">
+          <div class="rte-toolbar">
+            <button type="button" class="rte-btn" title="Bold" onclick="rteCmd('bold')"><b>B</b></button>
+            <button type="button" class="rte-btn" title="Italic" onclick="rteCmd('italic')"><i>I</i></button>
+            <button type="button" class="rte-btn" title="Inline code" onclick="rteCode()"><code>&lt;/&gt;</code></button>
+            <div class="rte-sep"></div>
+            <button type="button" class="rte-btn" title="Bullet list" onclick="rteCmd('insertUnorderedList')">☰ List</button>
+            <div class="rte-sep"></div>
+            <button type="button" class="rte-btn" title="Clear formatting" onclick="rteCmd('removeFormat')">✕ Clear</button>
+          </div>
+          <div class="rte-editor" id="f-description" contenteditable="true"
+               data-placeholder="Describe what this automation does…"></div>
+        </div>
       </div>
     </div>
 
@@ -294,7 +331,7 @@ function fillForm(card) {
   document.getElementById('f-id').value          = card.id          || '';
   document.getElementById('f-name').value        = card.name        || '';
   document.getElementById('f-category').value    = card.category    || '';
-  document.getElementById('f-description').value = card.description || '';
+  document.getElementById('f-description').innerHTML = card.description || '';
   document.getElementById('f-url').value         = card.url         || '';
   document.getElementById('f-sheet-url').value   = card.sheet_url   || '';
   document.getElementById('f-chat-url').value    = card.chat_url    || '';
@@ -314,10 +351,10 @@ function fillForm(card) {
 function readForm() {
   var name = document.getElementById('f-name').value.trim();
   var cat  = document.getElementById('f-category').value.trim();
-  var desc = document.getElementById('f-description').value.trim();
+  var desc = document.getElementById('f-description').innerHTML.trim();
   if (!name) { showToast('Card title is required', true); return null; }
   if (!cat)  { showToast('Category is required', true); return null; }
-  if (!desc) { showToast('Description is required', true); return null; }
+  if (!desc || desc === '<br>') { showToast('Description is required', true); return null; }
 
   var typeEl = document.querySelector('input[name="f-type"]:checked');
   var type   = typeEl ? typeEl.value : 'apps_script';
@@ -402,6 +439,39 @@ function showToast(msg, isError) {
   clearTimeout(t._timer);
   t._timer = setTimeout(function() { t.className = 'toast'; }, 3000);
 }
+
+function rteCmd(cmd) {
+  document.getElementById('f-description').focus();
+  document.execCommand(cmd, false, null);
+  updateToolbarState();
+}
+
+function rteCode() {
+  var sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+  var range = sel.getRangeAt(0);
+  var code = document.createElement('code');
+  range.surroundContents(code);
+  sel.removeAllRanges();
+}
+
+function updateToolbarState() {
+  var btns = document.querySelectorAll('.rte-btn');
+  btns.forEach(function(btn) {
+    var cmd = btn.getAttribute('title');
+    if (cmd === 'Bold')   btn.classList.toggle('active', document.queryCommandState('bold'));
+    if (cmd === 'Italic') btn.classList.toggle('active', document.queryCommandState('italic'));
+    if (cmd === 'Bullet list') btn.classList.toggle('active', document.queryCommandState('insertUnorderedList'));
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var editor = document.getElementById('f-description');
+  if (editor) {
+    editor.addEventListener('keyup', updateToolbarState);
+    editor.addEventListener('mouseup', updateToolbarState);
+  }
+});
 
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60); }
