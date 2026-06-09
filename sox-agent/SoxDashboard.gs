@@ -18,10 +18,10 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('SOX Dashboard')
-    .addItem('▶ Run SOX Tests', 'runSoxTests')
+    .addItem('Run SOX Tests', 'runSoxTests')
     .addSeparator()
-    .addItem('⚙ Configure (API key & folder)', 'showConfig')
-    .addItem('ℹ About', 'showAbout')
+    .addItem('Configure (API key & folder)', 'showConfig')
+    .addItem('About', 'showAbout')
     .addToUi();
 }
 
