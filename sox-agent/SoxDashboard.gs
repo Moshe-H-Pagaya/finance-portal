@@ -1,19 +1,19 @@
 // =============================================================================
-// SOX Dashboard — Google Apps Script
+// SOX Dashboard - Google Apps Script
 // Paste the full contents of this file into the Apps Script editor of the
-// SOX Dashboard Launcher spreadsheet (Extensions → Apps Script).
+// SOX Dashboard Launcher spreadsheet (Extensions -> Apps Script).
 // =============================================================================
 //
 // FIRST-TIME SETUP
-// 1. Paste this file → Save → Run onOpen (or reload the sheet).
-// 2. Click SOX Dashboard → ⚙ Configure → enter your Gemini API key.
+// 1. Paste this file -> Save -> Run onOpen (or reload the sheet).
+// 2. Click SOX Dashboard ->  Configure -> enter your Gemini API key.
 //    Get a free key at: https://aistudio.google.com/apikey
 // 3. Enter the Google Drive folder ID for SOX evidence
 //    (open the SOX_Dashboards folder in Drive, copy the ID from the URL).
-// 4. Click SOX Dashboard → ▶ Run SOX Tests.
+// 4. Click SOX Dashboard ->  Run SOX Tests.
 // =============================================================================
 
-// ── Menu ─────────────────────────────────────────────────────────────────────
+// -- Menu ---------------------------------------------------------------------
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -25,7 +25,7 @@ function onOpen() {
     .addToUi();
 }
 
-// ── Configuration dialog ──────────────────────────────────────────────────────
+// -- Configuration dialog ------------------------------------------------------
 
 function showConfig() {
   const props = PropertiesService.getScriptProperties();
@@ -50,7 +50,7 @@ function showConfig() {
 
       <label>SOX Drive Folder ID</label>
       <input id="folder" value="${escHtml(currentFolder)}" placeholder="1AbCdEfGhIjKlMnOpQrStUvWxYz">
-      <div class="hint">Open the SOX_Dashboards folder in Drive → copy the ID from the URL</div>
+      <div class="hint">Open the SOX_Dashboards folder in Drive, copy the ID from the URL</div>
 
       <label>Sheet Tab Name</label>
       <input id="tab" value="${escHtml(currentTab)}" placeholder="Sheet1">
@@ -68,11 +68,11 @@ function showConfig() {
       }
     </script>
   `)
-    .setTitle('SOX Dashboard — Configuration')
+    .setTitle('SOX Dashboard - Configuration')
     .setWidth(400)
     .setHeight(340);
 
-  SpreadsheetApp.getUi().showModalDialog(html, 'SOX Dashboard — Configuration');
+  SpreadsheetApp.getUi().showModalDialog(html, 'SOX Dashboard - Configuration');
 }
 
 function escHtml(s) {
@@ -96,11 +96,11 @@ function showAbout() {
     '  1. Reads evidence files from Drive (SOX_Dashboards / <Control ID> / input /)\n' +
     '  2. Sends them to Gemini AI for analysis\n' +
     '  3. Writes Pass/Fail, gaps, and timestamp back to the sheet\n\n' +
-    'Configure via SOX Dashboard → ⚙ Configure'
+    'Configure via SOX Dashboard ->  Configure'
   );
 }
 
-// ── Main runner ───────────────────────────────────────────────────────────────
+// -- Main runner ---------------------------------------------------------------
 
 function runSoxTests() {
   const props = PropertiesService.getScriptProperties();
@@ -109,18 +109,18 @@ function runSoxTests() {
   const tabName   = props.getProperty('SOX_SHEET_TAB') || 'Sheet1';
 
   if (!apiKey) {
-    SpreadsheetApp.getUi().alert('❌ Gemini API key is not set.\nGo to SOX Dashboard → ⚙ Configure.');
+    SpreadsheetApp.getUi().alert('ERROR: Gemini API key is not set.\nGo to SOX Dashboard ->  Configure.');
     return;
   }
   if (!folderId) {
-    SpreadsheetApp.getUi().alert('❌ SOX Drive folder ID is not set.\nGo to SOX Dashboard → ⚙ Configure.');
+    SpreadsheetApp.getUi().alert('ERROR: SOX Drive folder ID is not set.\nGo to SOX Dashboard ->  Configure.');
     return;
   }
 
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(tabName);
   if (!sheet) {
-    SpreadsheetApp.getUi().alert('❌ Sheet tab "' + tabName + '" not found.');
+    SpreadsheetApp.getUi().alert('ERROR: Sheet tab "' + tabName + '" not found.');
     return;
   }
 
@@ -132,7 +132,7 @@ function runSoxTests() {
 
   const headers = allData[0].map(h => String(h).toLowerCase().trim());
 
-  // ── Column detection (same fuzzy logic as the Python script) ─────────────
+  // -- Column detection (same fuzzy logic as the Python script) -------------
   function findCol() {
     const keywords = Array.from(arguments);
     for (let i = 0; i < headers.length; i++) {
@@ -155,15 +155,15 @@ function runSoxTests() {
   };
 
   if (C.controlId < 0) {
-    SpreadsheetApp.getUi().alert('❌ Could not find a "Control ID" column in row 1.\nHeaders found: ' + allData[0].join(', '));
+    SpreadsheetApp.getUi().alert('ERROR: Could not find a "Control ID" column in row 1.\nHeaders found: ' + allData[0].join(', '));
     return;
   }
   if (C.run < 0) {
-    SpreadsheetApp.getUi().alert('❌ Could not find a "Run?" column in row 1.\nHeaders found: ' + allData[0].join(', '));
+    SpreadsheetApp.getUi().alert('ERROR: Could not find a "Run?" column in row 1.\nHeaders found: ' + allData[0].join(', '));
     return;
   }
 
-  // ── Process rows ──────────────────────────────────────────────────────────
+  // -- Process rows ----------------------------------------------------------
   let processed = 0;
   let failed    = 0;
 
@@ -178,8 +178,8 @@ function runSoxTests() {
 
     if (!controlId) continue;
 
-    // Toast notification — visible in the sheet while running
-    ss.toast('Analyzing ' + controlId + ' (' + ctrlName + ')…', 'SOX Agent', -1);
+    // Toast notification - visible in the sheet while running
+    ss.toast('Analyzing ' + controlId + ' (' + ctrlName + ')...', 'SOX Agent', -1);
 
     // Get evidence files
     const evidence = getEvidenceFiles(folderId, controlId);
@@ -203,7 +203,7 @@ function runSoxTests() {
 
     // Write gaps
     if (C.gaps >= 0 && result.gaps && result.gaps.length) {
-      const gapText = result.gaps.map(g => '• ' + g).join('\n');
+      const gapText = result.gaps.map(g => '- ' + g).join('\n');
       sheet.getRange(rowNum, C.gaps + 1).setValue(
         result.summary ? gapText + '\n\n' + result.summary : gapText
       );
@@ -222,14 +222,14 @@ function runSoxTests() {
 
   ss.toast('', '', 1); // clear toast
   SpreadsheetApp.getUi().alert(
-    '✅ Done!\n\n' +
+    'Done! Done!\n\n' +
     'Controls tested: ' + processed + '\n' +
     'Passed: ' + (processed - failed) + '\n' +
     'Failed / has gaps: ' + failed
   );
 }
 
-// ── Google Drive helpers ──────────────────────────────────────────────────────
+// -- Google Drive helpers ------------------------------------------------------
 
 function getEvidenceFiles(rootFolderId, controlId) {
   const evidence = [];
@@ -260,7 +260,7 @@ function getEvidenceFiles(rootFolderId, controlId) {
       const mimeType = file.getMimeType();
       const sizeBytes = file.getSize();
 
-      // Skip very large files (>8 MB — Gemini inline limit)
+      // Skip very large files (>8 MB - Gemini inline limit)
       if (sizeBytes > 8 * 1024 * 1024) {
         Logger.log('Skipping large file: ' + name + ' (' + sizeBytes + ' bytes)');
         continue;
@@ -323,7 +323,7 @@ function resolveEffectiveMime(filename, driveMime) {
   return driveMime || 'application/octet-stream';
 }
 
-// ── Gemini analysis ────────────────────────────────────────────────────────────
+// -- Gemini analysis ------------------------------------------------------------
 
 function analyzeControl(apiKey, controlId, controlName, controlObjective, evidence) {
   const GEMINI_MODEL = 'gemini-2.0-flash';
@@ -339,8 +339,8 @@ function analyzeControl(apiKey, controlId, controlName, controlObjective, eviden
     'INSTRUCTIONS\n' +
     '1. Review all attached evidence files carefully.\n' +
     '2. Determine whether the evidence shows the control is operating effectively.\n' +
-    '3. If failing, list specific, actionable gaps — not vague statements.\n\n' +
-    'RESPONSE FORMAT — respond with valid JSON only, no markdown fences:\n' +
+    '3. If failing, list specific, actionable gaps - not vague statements.\n\n' +
+    'RESPONSE FORMAT - respond with valid JSON only, no markdown fences:\n' +
     '{\n' +
     '  "verdict": "Passed" or "Failed",\n' +
     '  "gaps": ["gap 1", "gap 2"],\n' +
@@ -348,7 +348,7 @@ function analyzeControl(apiKey, controlId, controlName, controlObjective, eviden
     '}\n\n' +
     'If no evidence files were provided:\n' +
     '{"verdict":"Failed","gaps":["No evidence files found in the input folder"],' +
-    '"summary":"Unable to test — no evidence uploaded"}';
+    '"summary":"Unable to test - no evidence uploaded"}';
 
   // Build parts array: text prompt + inline file data
   const parts = [{ text: promptText }];
