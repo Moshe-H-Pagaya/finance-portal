@@ -420,7 +420,7 @@ function init() {
         '<div class="card-top-bar" style="background:' + bar + '"></div>' +
         '<div class="card-body">' +
           '<div class="card-badges">' +
-            '<span class="badge" style="color:' + tc.color + ';background:' + tc.bg + '">' + (tc.icon || '') + (a.badge || '') + '</span>' +
+            '<span class="badge" style="color:' + tc.color + ';background:' + tc.bg + '">' + (tc.icon || '') + ((a.badge || '').replace('Apps Script', 'Web App')) + '</span>' +
             toolBadges +
           '</div>' +
           '<h3 class="card-title">' + (a.name || '') + '</h3>' +
@@ -428,10 +428,13 @@ function init() {
           '<div class="card-footer">' +
             '<div class="card-meta">' +
               (a.business_owner && a.business_owner.length
-                ? '<span class="meta-item">' + SVG.email + ' ' +
+                ? '<div style="display:flex;flex-direction:column;gap:3px">' +
+                  '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6B7280">Business Owner</span>' +
+                  '<span class="meta-item">' + SVG.email + ' ' +
                   (Array.isArray(a.business_owner) ? a.business_owner : [a.business_owner])
                     .map(e => '<a href="mailto:' + e + '" style="color:inherit;text-decoration:underline dotted">' + e + '</a>')
-                    .join(', ') + '</span>'
+                    .join(', ') + '</span>' +
+                  '</div>'
                 : '') +
             '</div>' +
             '<div class="card-actions">' +

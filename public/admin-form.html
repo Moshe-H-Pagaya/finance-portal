@@ -188,7 +188,7 @@
             <input type="radio" name="f-type" id="t-py"   value="python_script"><label for="t-py">🐍 Python Script</label>
             <input type="radio" name="f-type" id="t-wk"   value="workato"      ><label for="t-wk">⚡ Workato</label>
             <input type="radio" name="f-type" id="t-wkai" value="workato_ai"   ><label for="t-wkai">🤖 Workato AI</label>
-            <input type="radio" name="f-type" id="t-gas"  value="apps_script"  ><label for="t-gas">📜 Apps Script</label>
+            <input type="radio" name="f-type" id="t-gas"  value="apps_script"  ><label for="t-gas">🌐 Web App</label>
           </div>
         </div>
       </div>
@@ -358,7 +358,7 @@ function readForm() {
 
   var typeEl = document.querySelector('input[name="f-type"]:checked');
   var type   = typeEl ? typeEl.value : 'apps_script';
-  var BADGE_MAP = { python_script: 'Python Script', workato: 'Workato', workato_ai: 'Workato AI', apps_script: 'Apps Script' };
+  var BADGE_MAP = { python_script: 'Python Script', workato: 'Workato', workato_ai: 'Workato AI', apps_script: 'Web App' };
 
   var tools = [];
   document.querySelectorAll('input[name="tools"]:checked').forEach(function(cb) { tools.push(cb.value); });
