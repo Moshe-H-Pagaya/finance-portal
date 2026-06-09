@@ -222,7 +222,7 @@ function runSoxTests() {
 
   ss.toast('', '', 1); // clear toast
   SpreadsheetApp.getUi().alert(
-    'Done! Done!\n\n' +
+    'Done!\n\n' +
     'Controls tested: ' + processed + '\n' +
     'Passed: ' + (processed - failed) + '\n' +
     'Failed / has gaps: ' + failed
