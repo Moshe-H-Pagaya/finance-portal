@@ -389,7 +389,7 @@ function resolveEffectiveMime(filename, driveMime) {
 // -- Gemini analysis ------------------------------------------------------------
 
 function analyzeControl(apiKey, controlId, controlName, controlObjective, evidence) {
-  const GEMINI_MODEL = 'gemini-2.0-flash';
+  const GEMINI_MODEL = 'gemini-2.5-flash';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
               GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
