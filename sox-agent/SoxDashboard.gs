@@ -52,7 +52,11 @@ function diagnose() {
 
   var C = {
     controlId : findCol('control', 'id'),
-    name      : findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name'),
+    name      : findCol('control', 'activity') >= 0 ? findCol('control', 'activity') :
+                (findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name')),
+    objective : findCol('objective') >= 0 ? findCol('objective') :
+                (findCol('test plan') >= 0 ? findCol('test plan') :
+                (findCol('testing') >= 0 ? findCol('testing') : findCol('activity'))),
     run       : findCol('run'),
     result    : findCol('result') >= 0 ? findCol('result') : (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
     gaps      : findCol('gap') >= 0 ? findCol('gap') : (findCol('notes') >= 0 ? findCol('notes') : findCol('finding')),
@@ -73,17 +77,41 @@ function diagnose() {
     }
   }
 
+  // Check Drive folder matches
+  var driveFolderId = PropertiesService.getScriptProperties().getProperty('SOX_DRIVE_FOLDER_ID') || '';
+  var driveCheck = '';
+  if (driveFolderId && C.controlId >= 0) {
+    try {
+      var rootFolder = DriveApp.getFolderById(driveFolderId);
+      var folderNames = [];
+      var iter = rootFolder.getFolders();
+      while (iter.hasNext()) folderNames.push(iter.next().getName());
+
+      driveCheck = '\nDrive folder check (root has ' + folderNames.length + ' subfolders):\n';
+      for (var i = 1; i < data.length; i++) {
+        var cid = String(data[i][C.controlId] || '').trim();
+        if (!cid) continue;
+        var match = folderNames.some(function(fn){ return fn.trim().toLowerCase() === cid.toLowerCase(); });
+        driveCheck += '  ' + cid + ': ' + (match ? 'folder found' : 'NO FOLDER FOUND') + '\n';
+      }
+      driveCheck += '\nActual Drive subfolders:\n' + folderNames.map(function(n){ return '  "' + n + '"'; }).join('\n');
+    } catch(e) {
+      driveCheck = '\nDrive check failed: ' + e.message;
+    }
+  }
+
   var msg = 'Tab: "' + tabName + '" (' + (data.length - 1) + ' data rows)\n\n' +
     'Column mapping:\n' +
     '  Control ID  : ' + (C.controlId >= 0  ? headers[C.controlId]  + ' (col ' + (C.controlId+1)  + ')' : 'NOT FOUND') + '\n' +
     '  Control Name: ' + (C.name >= 0       ? headers[C.name]       + ' (col ' + (C.name+1)       + ')' : 'NOT FOUND') + '\n' +
+    '  Objective   : ' + (C.objective >= 0  ? headers[C.objective]  + ' (col ' + (C.objective+1)  + ')' : 'NOT FOUND') + '\n' +
     '  Run?        : ' + (C.run >= 0        ? headers[C.run]        + ' (col ' + (C.run+1)        + ')' : 'NOT FOUND') + '\n' +
     '  Result      : ' + (C.result >= 0     ? headers[C.result]     + ' (col ' + (C.result+1)     + ')' : 'NOT FOUND') + '\n' +
     '  Gaps/Notes  : ' + (C.gaps >= 0       ? headers[C.gaps]       + ' (col ' + (C.gaps+1)       + ')' : 'NOT FOUND') + '\n' +
     '  Last Run    : ' + (C.lastRun >= 0    ? headers[C.lastRun]    + ' (col ' + (C.lastRun+1)    + ')' : 'NOT FOUND') + '\n\n' +
     'Rows with Run = Yes: ' + yesCount + '\n' +
-    'First Run column values: ' + (runValues.length ? runValues.join(', ') : 'n/a') + '\n\n' +
-    'All headers:\n' + headers.map(function(h,i){ return '  ' + (i+1) + ': ' + h; }).join('\n');
+    'First Run column values: ' + (runValues.length ? runValues.join(', ') : 'n/a') +
+    driveCheck;
 
   SpreadsheetApp.getUi().alert(msg);
 }
@@ -206,8 +234,14 @@ function runSoxTests() {
 
   const C = {
     controlId  : findCol('control', 'id'),
-    name       : findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name'),
-    objective  : findCol('objective') >= 0 ? findCol('objective') : findCol('description'),
+    // Prefer "Control Activity" over "Control Owner Name" for the description
+    name       : findCol('control', 'activity') >= 0 ? findCol('control', 'activity') :
+                 (findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name')),
+    // Use test plan / testing procedures as the objective if no explicit objective column
+    objective  : findCol('objective') >= 0 ? findCol('objective') :
+                 (findCol('test plan') >= 0 ? findCol('test plan') :
+                 (findCol('testing') >= 0 ? findCol('testing') :
+                 (findCol('activity') >= 0 ? findCol('activity') : findCol('description')))),
     run        : findCol('run'),
     result     : findCol('result') >= 0 ? findCol('result') :
                  (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
@@ -299,16 +333,24 @@ function getEvidenceFiles(rootFolderId, controlId) {
   try {
     const root = DriveApp.getFolderById(rootFolderId);
 
-    // Find the folder that holds the evidence files.
+    // Find the control subfolder — case-insensitive, trimmed match.
     // Supports two structures:
     //   A) rootFolder / {ControlID} / files          (Control ID folders directly in root)
     //   B) rootFolder / {ControlID} / input / files  (evidence in a nested "input" subfolder)
-    const ctrlFolders = root.getFoldersByName(controlId);
-    if (!ctrlFolders.hasNext()) {
-      Logger.log('No Drive folder for control: ' + controlId);
+    const controlIdNorm = controlId.trim().toLowerCase();
+    let ctrlFolder = null;
+    const allSubfolders = root.getFolders();
+    while (allSubfolders.hasNext()) {
+      const f = allSubfolders.next();
+      if (f.getName().trim().toLowerCase() === controlIdNorm) {
+        ctrlFolder = f;
+        break;
+      }
+    }
+    if (!ctrlFolder) {
+      Logger.log('No Drive folder found for control: "' + controlId + '"');
       return evidence;
     }
-    const ctrlFolder = ctrlFolders.next();
 
     // Prefer an "input" subfolder if it exists; otherwise read files directly
     // from the Control ID folder itself.
