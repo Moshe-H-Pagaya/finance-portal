@@ -51,13 +51,15 @@ function diagnose() {
   }
 
   var C = {
-    controlId : findCol('control', 'id'),
-    name      : findCol('control', 'activity') >= 0 ? findCol('control', 'activity') :
-                (findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name')),
-    objective : findCol('objective') >= 0 ? findCol('objective') :
-                (findCol('test plan') >= 0 ? findCol('test plan') :
-                (findCol('testing') >= 0 ? findCol('testing') : findCol('activity'))),
-    run       : findCol('run'),
+    controlId  : findCol('control', 'id'),
+    name       : findCol('control', 'activity') >= 0 ? findCol('control', 'activity') :
+                 (findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name')),
+    objective  : findCol('objective') >= 0 ? findCol('objective') :
+                 (findCol('test plan') >= 0 ? findCol('test plan') : findCol('description')),
+    procedures : findCol('procedure') >= 0 ? findCol('procedure') :
+                 (findCol('testing procedure') >= 0 ? findCol('testing procedure') :
+                 (findCol('testing') >= 0 ? findCol('testing') : -1)),
+    run        : findCol('run'),
     result    : findCol('result') >= 0 ? findCol('result') : (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
     gaps      : findCol('gap') >= 0 ? findCol('gap') : (findCol('notes') >= 0 ? findCol('notes') : findCol('finding')),
     lastRun   : findCol('last run') >= 0 ? findCol('last run') : (findCol('timestamp') >= 0 ? findCol('timestamp') : findCol('date')),
@@ -102,10 +104,11 @@ function diagnose() {
 
   var msg = 'Tab: "' + tabName + '" (' + (data.length - 1) + ' data rows)\n\n' +
     'Column mapping:\n' +
-    '  Control ID  : ' + (C.controlId >= 0  ? headers[C.controlId]  + ' (col ' + (C.controlId+1)  + ')' : 'NOT FOUND') + '\n' +
-    '  Control Name: ' + (C.name >= 0       ? headers[C.name]       + ' (col ' + (C.name+1)       + ')' : 'NOT FOUND') + '\n' +
-    '  Objective   : ' + (C.objective >= 0  ? headers[C.objective]  + ' (col ' + (C.objective+1)  + ')' : 'NOT FOUND') + '\n' +
-    '  Run?        : ' + (C.run >= 0        ? headers[C.run]        + ' (col ' + (C.run+1)        + ')' : 'NOT FOUND') + '\n' +
+    '  Control ID        : ' + (C.controlId  >= 0 ? headers[C.controlId]  + ' (col ' + (C.controlId+1)  + ')' : 'NOT FOUND') + '\n' +
+    '  Control Desc      : ' + (C.name       >= 0 ? headers[C.name]       + ' (col ' + (C.name+1)       + ')' : 'NOT FOUND') + '\n' +
+    '  Test Plan         : ' + (C.objective  >= 0 ? headers[C.objective]  + ' (col ' + (C.objective+1)  + ')' : 'NOT FOUND') + '\n' +
+    '  Testing Procedures: ' + (C.procedures >= 0 ? headers[C.procedures] + ' (col ' + (C.procedures+1) + ')' : 'NOT FOUND') + '\n' +
+    '  Run?              : ' + (C.run        >= 0 ? headers[C.run]        + ' (col ' + (C.run+1)        + ')' : 'NOT FOUND') + '\n' +
     '  Result      : ' + (C.result >= 0     ? headers[C.result]     + ' (col ' + (C.result+1)     + ')' : 'NOT FOUND') + '\n' +
     '  Gaps/Notes  : ' + (C.gaps >= 0       ? headers[C.gaps]       + ' (col ' + (C.gaps+1)       + ')' : 'NOT FOUND') + '\n' +
     '  Last Run    : ' + (C.lastRun >= 0    ? headers[C.lastRun]    + ' (col ' + (C.lastRun+1)    + ')' : 'NOT FOUND') + '\n\n' +
@@ -237,11 +240,13 @@ function runSoxTests() {
     // Prefer "Control Activity" over "Control Owner Name" for the description
     name       : findCol('control', 'activity') >= 0 ? findCol('control', 'activity') :
                  (findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name')),
-    // Use test plan / testing procedures as the objective if no explicit objective column
+    // "Test plan" column — high-level description of what should be tested
     objective  : findCol('objective') >= 0 ? findCol('objective') :
-                 (findCol('test plan') >= 0 ? findCol('test plan') :
-                 (findCol('testing') >= 0 ? findCol('testing') :
-                 (findCol('activity') >= 0 ? findCol('activity') : findCol('description')))),
+                 (findCol('test plan') >= 0 ? findCol('test plan') : findCol('description')),
+    // "Testing procedures Q1, 2026" — specific quarterly testing steps (sent separately to Gemini)
+    procedures : findCol('procedure') >= 0 ? findCol('procedure') :
+                 (findCol('testing procedure') >= 0 ? findCol('testing procedure') :
+                 (findCol('testing') >= 0 ? findCol('testing') : -1)),
     run        : findCol('run'),
     result     : findCol('result') >= 0 ? findCol('result') :
                  (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
@@ -271,7 +276,8 @@ function runSoxTests() {
 
     const controlId  = String(row[C.controlId]  || '').trim();
     const ctrlName   = C.name      >= 0 ? String(row[C.name]      || '').trim() : '';
-    const objective  = C.objective >= 0 ? String(row[C.objective] || '').trim() : '';
+    const objective   = C.objective   >= 0 ? String(row[C.objective]   || '').trim() : '';
+    const procedures  = C.procedures  >= 0 ? String(row[C.procedures]  || '').trim() : '';
 
     if (!controlId) continue;
 
@@ -284,7 +290,7 @@ function runSoxTests() {
     // Call Gemini
     let result;
     try {
-      result = analyzeControl(apiKey, controlId, ctrlName, objective, evidence);
+      result = analyzeControl(apiKey, controlId, ctrlName, objective, procedures, evidence);
     } catch (e) {
       result = { verdict: 'Failed', gaps: ['Agent error: ' + e.message], summary: String(e) };
     }
@@ -504,7 +510,7 @@ function resolveGeminiMime(filename, driveMime) {
 
 // -- Gemini analysis ------------------------------------------------------------
 
-function analyzeControl(apiKey, controlId, controlName, controlObjective, evidence) {
+function analyzeControl(apiKey, controlId, controlName, controlObjective, testingProcedures, evidence) {
   const GEMINI_MODEL = 'gemini-2.5-flash';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
               GEMINI_MODEL + ':generateContent?key=' + apiKey;
@@ -512,13 +518,15 @@ function analyzeControl(apiKey, controlId, controlName, controlObjective, eviden
   const promptText =
     'You are a SOX (Sarbanes-Oxley) compliance auditor.\n\n' +
     'CONTROL DETAILS\n' +
-    'Control ID:        ' + controlId + '\n' +
-    'Control Name:      ' + controlName + '\n' +
-    'Control Objective: ' + (controlObjective || '(not specified)') + '\n\n' +
+    'Control ID:          ' + controlId + '\n' +
+    'Control Description: ' + (controlName       || '(not specified)') + '\n' +
+    'Test Plan:           ' + (controlObjective  || '(not specified)') + '\n' +
+    'Testing Procedures (Q1 2026): ' + (testingProcedures || '(not specified)') + '\n\n' +
     'INSTRUCTIONS\n' +
     '1. Review all attached evidence files carefully.\n' +
-    '2. Determine whether the evidence shows the control is operating effectively.\n' +
-    '3. If failing, list specific, actionable gaps - not vague statements.\n\n' +
+    '2. Use the Testing Procedures above as your checklist — verify each step has evidence.\n' +
+    '3. Determine whether the evidence shows the control is operating effectively.\n' +
+    '4. If failing, list specific, actionable gaps tied to the testing procedures — not vague statements.\n\n' +
     'RESPONSE FORMAT - respond with valid JSON only, no markdown fences:\n' +
     '{\n' +
     '  "verdict": "Passed" or "Failed",\n' +
