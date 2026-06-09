@@ -1,0 +1,49 @@
+---
+description: GCP deployment infrastructure and CI/CD pipeline for finance-portal
+alwaysApply: true
+---
+
+# GCP Deployment — Finance Portal
+
+## Infrastructure (all already provisioned)
+
+- **GCP project:** `finance-ai-497313` (region: `us-east1`)
+- **Logged-in user:** `moshe.halfon@pagaya.com`
+- **Cloud Run service:** `finance-portal` — running at `https://finance-portal-987284087457.us-east1.run.app`
+- **Public URL:** `portal.finance.pagaya.com` (behind HTTPS LB + Cloud IAP / Okta)
+- **Artifact Registry:** `us-east1-docker.pkg.dev/finance-ai-497313/finance-portal/app`
+- **Runtime SA:** `finance-portal-run@finance-ai-497313.iam.gserviceaccount.com`
+- **Deploy SA:** `gha-deployer@finance-ai-497313.iam.gserviceaccount.com`
+- **Workload Identity pool:** `projects/987284087457/locations/global/workloadIdentityPools/github` (ACTIVE)
+
+## GitHub Actions CI/CD
+
+- **Workflow:** `.github/workflows/deploy.yml`
+- **Trigger:** push to `main` or manual `workflow_dispatch`
+- **Secrets set on repo:** `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`
+- **Auth method:** Workload Identity Federation (no SA keys)
+- **Pipeline:** build Docker image → push to Artifact Registry → `gcloud run deploy`
+
+Every push to `main` deploys automatically. No manual steps needed.
+
+## Platform types & display rules
+
+The internal `type` field on cards uses these keys. Display names and icons must follow this mapping — do not deviate:
+
+| Internal key | Display label | Icon |
+|---|---|---|
+| `apps_script` | **Web App** | Globe SVG (stroke `#1967D2`) |
+| `workato` | **Workato** | `/workato-logo.png` (teal W) |
+| `workato_ai` | **Workato AI** | 🤖 |
+| `python_script` | **Python Script** | 🐍 |
+
+- `apps_script` was renamed to "Web App" — never show "Apps Script" to users anywhere
+- The Workato logo PNG lives at `public/workato-logo.png`
+- Any card with `badge: 'Apps Script'` must be normalised to "Web App" at render time
+
+## Rollback
+
+```bash
+gcloud run revisions list --service=finance-portal --region=us-east1
+gcloud run services update-traffic finance-portal --region=us-east1 --to-revisions=<prev>=100
+```
