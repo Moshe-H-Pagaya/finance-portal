@@ -347,7 +347,35 @@ function getEvidenceFiles(rootFolderId, controlId) {
 
       if (isSpreadsheet) {
         try {
-          const ss = SpreadsheetApp.openById(file.getId());
+          // For binary xlsx/xls files, SpreadsheetApp.openById() won't work directly.
+          // We create a temporary Google Sheets copy via the Drive REST API, read it,
+          // then immediately trash the temp copy.
+          let ssId = file.getId();
+          let tempId = null;
+
+          if (mimeType !== 'application/vnd.google-apps.spreadsheet') {
+            const copyResp = UrlFetchApp.fetch(
+              'https://www.googleapis.com/drive/v3/files/' + ssId + '/copy',
+              {
+                method: 'post',
+                headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+                contentType: 'application/json',
+                payload: JSON.stringify({
+                  name: '_sox_tmp_' + ssId,
+                  mimeType: 'application/vnd.google-apps.spreadsheet',
+                }),
+                muteHttpExceptions: true,
+              }
+            );
+            if (copyResp.getResponseCode() !== 200) {
+              Logger.log('Drive copy failed for ' + name + ': ' + copyResp.getContentText().slice(0, 200));
+              continue;
+            }
+            tempId = JSON.parse(copyResp.getContentText()).id;
+            ssId = tempId;
+          }
+
+          const ss = SpreadsheetApp.openById(ssId);
           let csv = '';
           ss.getSheets().forEach(function(s) {
             csv += '=== Sheet: ' + s.getName() + ' ===\n';
@@ -359,12 +387,17 @@ function getEvidenceFiles(rootFolderId, controlId) {
             });
             csv += '\n';
           });
+
+          if (tempId) {
+            try { DriveApp.getFileById(tempId).setTrashed(true); } catch(te) {}
+          }
+
           evidence.push({
             name: name + '.txt',
             mimeType: 'text/plain',
             data: Utilities.base64Encode(Utilities.newBlob(csv, 'text/plain; charset=utf-8').getBytes()),
           });
-          Logger.log('Converted spreadsheet to CSV text: ' + name + ' (' + csv.length + ' chars)');
+          Logger.log('Converted spreadsheet to text: ' + name + ' (' + csv.length + ' chars)');
         } catch (e) {
           Logger.log('Failed to convert spreadsheet ' + name + ': ' + e.message);
         }
@@ -456,7 +489,14 @@ function analyzeControl(apiKey, controlId, controlName, controlObjective, eviden
 
   // Build parts array: text prompt + inline file data
   const parts = [{ text: promptText }];
+  // Hard whitelist — Gemini inline API only accepts these types.
+  const GEMINI_OK = { 'text/plain':true, 'application/pdf':true,
+    'image/png':true, 'image/jpeg':true, 'image/gif':true, 'image/webp':true };
   for (const ef of evidence) {
+    if (!GEMINI_OK[ef.mimeType]) {
+      Logger.log('Blocked unsupported MIME before Gemini call: ' + ef.mimeType + ' (' + ef.name + ')');
+      continue;
+    }
     parts.push({ inlineData: { mimeType: ef.mimeType, data: ef.data } });
   }
 
