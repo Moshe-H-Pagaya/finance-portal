@@ -332,32 +332,71 @@ function getEvidenceFiles(rootFolderId, controlId) {
         continue;
       }
 
-      let blob = file.getBlob();
+      // Convert spreadsheets to CSV text (Gemini does not accept xlsx/xls inline)
+      const isSpreadsheet =
+        mimeType === 'application/vnd.google-apps.spreadsheet' ||
+        mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        mimeType === 'application/vnd.ms-excel' ||
+        name.match(/\.(xlsx|xls)$/i);
 
-      // Export Google Workspace formats to Office-compatible formats
-      if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-        blob = file.exportLinks
-          ? Drive.Files.export(file.getId(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-          : UrlFetchApp.fetch(
-              'https://docs.google.com/spreadsheets/d/' + file.getId() + '/export?format=xlsx',
-              { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } }
-            ).getBlob();
-      } else if (mimeType === 'application/vnd.google-apps.document') {
-        blob = UrlFetchApp.fetch(
-          'https://docs.google.com/document/d/' + file.getId() + '/export?format=docx',
-          { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } }
-        ).getBlob();
+      const isDocument =
+        mimeType === 'application/vnd.google-apps.document' ||
+        mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        mimeType === 'application/msword' ||
+        name.match(/\.(docx|doc)$/i);
+
+      if (isSpreadsheet) {
+        try {
+          const ss = SpreadsheetApp.openById(file.getId());
+          let csv = '';
+          ss.getSheets().forEach(function(s) {
+            csv += '=== Sheet: ' + s.getName() + ' ===\n';
+            s.getDataRange().getValues().forEach(function(row) {
+              csv += row.map(function(c) {
+                const v = String(c === null || c === undefined ? '' : c);
+                return v.indexOf(',') >= 0 || v.indexOf('"') >= 0 ? '"' + v.replace(/"/g,'""') + '"' : v;
+              }).join(',') + '\n';
+            });
+            csv += '\n';
+          });
+          evidence.push({
+            name: name + '.txt',
+            mimeType: 'text/plain',
+            data: Utilities.base64Encode(Utilities.newBlob(csv, 'text/plain; charset=utf-8').getBytes()),
+          });
+          Logger.log('Converted spreadsheet to CSV text: ' + name + ' (' + csv.length + ' chars)');
+        } catch (e) {
+          Logger.log('Failed to convert spreadsheet ' + name + ': ' + e.message);
+        }
+        continue;
       }
 
-      const bytes = blob.getBytes();
+      if (isDocument) {
+        try {
+          const doc = DocumentApp.openById(file.getId());
+          const txt = doc.getBody().getText();
+          evidence.push({
+            name: name + '.txt',
+            mimeType: 'text/plain',
+            data: Utilities.base64Encode(Utilities.newBlob(txt, 'text/plain; charset=utf-8').getBytes()),
+          });
+          Logger.log('Converted document to text: ' + name + ' (' + txt.length + ' chars)');
+        } catch (e) {
+          Logger.log('Failed to convert document ' + name + ': ' + e.message);
+        }
+        continue;
+      }
+
+      // PDF and images — send as-is (Gemini supports these natively)
+      const geminiMime = resolveGeminiMime(name, mimeType);
+      if (!geminiMime) {
+        Logger.log('Skipping unsupported type: ' + name + ' (' + mimeType + ')');
+        continue;
+      }
+
+      const bytes = file.getBlob().getBytes();
       const base64data = Utilities.base64Encode(bytes);
-
-      evidence.push({
-        name: name,
-        mimeType: resolveEffectiveMime(name, mimeType),
-        data: base64data,
-      });
-
+      evidence.push({ name: name, mimeType: geminiMime, data: base64data });
       Logger.log('Added evidence: ' + name + ' (' + bytes.length + ' bytes)');
     }
   } catch (e) {
@@ -366,27 +405,26 @@ function getEvidenceFiles(rootFolderId, controlId) {
   return evidence;
 }
 
-function resolveEffectiveMime(filename, driveMime) {
-  const ext = filename.split('.').pop().toLowerCase();
-  const extMap = {
+// Only return MIME types Gemini's inline API actually accepts.
+// Spreadsheets and documents are converted to text before this is called.
+function resolveGeminiMime(filename, driveMime) {
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  const supported = {
     pdf: 'application/pdf',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    xls: 'application/vnd.ms-excel',
-    csv: 'text/csv',
-    txt: 'text/plain',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    doc: 'application/msword',
     png: 'image/png',
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    txt: 'text/plain',
+    csv: 'text/plain',
+    md: 'text/plain',
   };
-  if (extMap[ext]) return extMap[ext];
-  // Google Workspace exports
-  if (driveMime === 'application/vnd.google-apps.spreadsheet')
-    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-  if (driveMime === 'application/vnd.google-apps.document')
-    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  return driveMime || 'application/octet-stream';
+  if (supported[ext]) return supported[ext];
+  if (driveMime === 'application/pdf') return 'application/pdf';
+  if (driveMime && driveMime.startsWith('image/')) return driveMime;
+  if (driveMime === 'text/plain' || driveMime === 'text/csv') return 'text/plain';
+  return null; // unsupported — caller will skip
 }
 
 // -- Gemini analysis ------------------------------------------------------------
