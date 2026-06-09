@@ -299,7 +299,10 @@ function getEvidenceFiles(rootFolderId, controlId) {
   try {
     const root = DriveApp.getFolderById(rootFolderId);
 
-    // Find subfolder matching Control ID
+    // Find the folder that holds the evidence files.
+    // Supports two structures:
+    //   A) rootFolder / {ControlID} / files          (Control ID folders directly in root)
+    //   B) rootFolder / {ControlID} / input / files  (evidence in a nested "input" subfolder)
     const ctrlFolders = root.getFoldersByName(controlId);
     if (!ctrlFolders.hasNext()) {
       Logger.log('No Drive folder for control: ' + controlId);
@@ -307,13 +310,13 @@ function getEvidenceFiles(rootFolderId, controlId) {
     }
     const ctrlFolder = ctrlFolders.next();
 
-    // Find "input" subfolder inside it
+    // Prefer an "input" subfolder if it exists; otherwise read files directly
+    // from the Control ID folder itself.
+    let inputFolder = ctrlFolder;
     const inputFolders = ctrlFolder.getFoldersByName('input');
-    if (!inputFolders.hasNext()) {
-      Logger.log('No "input" subfolder for control: ' + controlId);
-      return evidence;
+    if (inputFolders.hasNext()) {
+      inputFolder = inputFolders.next();
     }
-    const inputFolder = inputFolders.next();
 
     // Collect all files
     const files = inputFolder.getFiles();
