@@ -295,7 +295,7 @@ function testFileReading() {
             msg += '  Token prefix: ' + ScriptApp.getOAuthToken().substring(0,20) + '...\n';
             try {
               const copyResp = UrlFetchApp.fetch(
-                'https://www.googleapis.com/drive/v3/files/' + file.getId() + '/copy',
+                'https://www.googleapis.com/drive/v3/files/' + file.getId() + '/copy?supportsAllDrives=true',
                 {
                   method: 'post',
                   headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
@@ -600,7 +600,7 @@ function getEvidenceFiles(rootFolderId, controlId) {
 
           if (mimeType !== 'application/vnd.google-apps.spreadsheet') {
             const copyResp = UrlFetchApp.fetch(
-              'https://www.googleapis.com/drive/v3/files/' + ssId + '/copy',
+              'https://www.googleapis.com/drive/v3/files/' + ssId + '/copy?supportsAllDrives=true',
               {
                 method: 'post',
                 headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
