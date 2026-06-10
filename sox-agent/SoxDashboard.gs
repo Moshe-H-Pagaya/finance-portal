@@ -22,6 +22,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Configure (API key & folder)', 'showConfig')
     .addItem('Diagnose (show column map)', 'diagnose')
+    .addItem('Test File Reading', 'testFileReading')
     .addItem('About', 'showAbout')
     .addToUi();
 }
@@ -182,6 +183,192 @@ function saveConfig(apiKey, driveFolderId, sheetTab) {
   if (driveFolderId) props.setProperty('SOX_DRIVE_FOLDER_ID', driveFolderId);
   if (sheetTab)     props.setProperty('SOX_SHEET_TAB',        sheetTab);
 }
+
+// -- Test File Reading diagnostic ------------------------------------------------
+// Lets you pick a Control ID and see exactly what happens when the script tries
+// to read the evidence files — including any Drive API errors.
+
+function testFileReading() {
+  const props    = PropertiesService.getScriptProperties();
+  const folderId = props.getProperty('SOX_DRIVE_FOLDER_ID');
+  if (!folderId) {
+    SpreadsheetApp.getUi().alert('Drive folder ID not set. Run Configure first.');
+    return;
+  }
+
+  const ui  = SpreadsheetApp.getUi();
+  const res = ui.prompt('Test File Reading',
+    'Enter Control ID to test (e.g. IL.FSCP.04):', ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  const controlId = res.getResponseText().trim();
+  if (!controlId) return;
+
+  let msg = 'Testing: "' + controlId + '"\n';
+  msg += '=====================================\n\n';
+
+  try {
+    const root = DriveApp.getFolderById(folderId);
+    msg += 'Root folder: ' + root.getName() + '\n\n';
+
+    // Find matching subfolder (case-insensitive)
+    const norm = controlId.toLowerCase();
+    let ctrlFolder = null;
+    const subs = root.getFolders();
+    const allNames = [];
+    while (subs.hasNext()) {
+      const f = subs.next();
+      allNames.push(f.getName());
+      if (f.getName().trim().toLowerCase() === norm) ctrlFolder = f;
+    }
+    if (!ctrlFolder) {
+      msg += 'ERROR: No folder matching "' + controlId + '"\n';
+      msg += 'Drive has: ' + allNames.join(', ');
+      SpreadsheetApp.getUi().alert(msg);
+      return;
+    }
+    msg += 'Folder found: "' + ctrlFolder.getName() + '"\n\n';
+
+    // Scan for an "input" subfolder, otherwise use ctrlFolder directly
+    // Also scan any other subfolders
+    const foldersToScan = [];
+    const subFolders = ctrlFolder.getFolders();
+    while (subFolders.hasNext()) {
+      foldersToScan.push(subFolders.next());
+    }
+    if (foldersToScan.length === 0) {
+      msg += 'No subfolders — reading files directly from control folder\n\n';
+      foldersToScan.push(ctrlFolder); // treat ctrlFolder itself
+    } else {
+      // Also include the root control folder in case files are there too
+      foldersToScan.unshift(ctrlFolder);
+      msg += 'Subfolders found: ' + foldersToScan.slice(1).map(f => f.getName()).join(', ') + '\n\n';
+    }
+
+    let totalFiles = 0;
+    for (const folder of foldersToScan) {
+      const inFolder = folder.getId() === ctrlFolder.getId()
+        ? 'Control folder root' : 'Subfolder: ' + folder.getName();
+      const fileIter = folder.getFiles();
+      const filesHere = [];
+      while (fileIter.hasNext()) filesHere.push(fileIter.next());
+
+      if (filesHere.length === 0) {
+        msg += '[' + inFolder + ']: no files\n';
+        continue;
+      }
+
+      msg += '[' + inFolder + ']: ' + filesHere.length + ' file(s)\n';
+      for (const file of filesHere) {
+        totalFiles++;
+        const name     = file.getName();
+        const mime     = file.getMimeType();
+        const kb       = (file.getSize() / 1024).toFixed(1);
+        msg += '\n  File: ' + name + '\n';
+        msg += '  MIME: ' + mime + '\n';
+        msg += '  Size: ' + kb + ' KB\n';
+
+        if (file.getSize() > 8 * 1024 * 1024) {
+          msg += '  STATUS: SKIPPED - too large (> 8 MB)\n';
+          continue;
+        }
+
+        const isXlsx = mime === 'application/vnd.google-apps.spreadsheet' ||
+                       mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                       mime === 'application/vnd.ms-excel' || name.match(/\.(xlsx|xls)$/i);
+        const isDoc  = mime === 'application/vnd.google-apps.document' ||
+                       mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                       mime === 'application/msword' || name.match(/\.(docx|doc)$/i);
+
+        if (isXlsx) {
+          if (mime === 'application/vnd.google-apps.spreadsheet') {
+            msg += '  Type: Native Google Sheet\n';
+            try {
+              const ss = SpreadsheetApp.openById(file.getId());
+              const sheets = ss.getSheets();
+              msg += '  Tabs: ' + sheets.map(s => s.getName() + '(' + s.getLastRow() + ' rows)').join(', ') + '\n';
+              msg += '  STATUS: OK - readable directly\n';
+            } catch(e) {
+              msg += '  STATUS: FAILED to open - ' + e.message + '\n';
+            }
+          } else {
+            msg += '  Type: XLSX/XLS - needs Drive copy conversion\n';
+            msg += '  Token prefix: ' + ScriptApp.getOAuthToken().substring(0,20) + '...\n';
+            try {
+              const copyResp = UrlFetchApp.fetch(
+                'https://www.googleapis.com/drive/v3/files/' + file.getId() + '/copy',
+                {
+                  method: 'post',
+                  headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+                  contentType: 'application/json',
+                  payload: JSON.stringify({
+                    name: '_sox_diag_' + file.getId(),
+                    mimeType: 'application/vnd.google-apps.spreadsheet',
+                  }),
+                  muteHttpExceptions: true,
+                }
+              );
+              const httpCode = copyResp.getResponseCode();
+              msg += '  Drive copy HTTP: ' + httpCode + '\n';
+              if (httpCode === 200) {
+                const tempId = JSON.parse(copyResp.getContentText()).id;
+                msg += '  Temp file created: ' + tempId + '\n';
+                Utilities.sleep(4000);
+                try {
+                  const ss    = SpreadsheetApp.openById(tempId);
+                  const tabs  = ss.getSheets();
+                  msg += '  Tabs: ' + tabs.map(s => s.getName() + '(' + s.getLastRow() + 'r)').join(', ') + '\n';
+                  msg += '  STATUS: OK - conversion works\n';
+                } catch(oe) {
+                  msg += '  STATUS: FAILED to open copy - ' + oe.message + '\n';
+                }
+                try { DriveApp.getFileById(tempId).setTrashed(true); } catch(te) {}
+              } else {
+                msg += '  Copy error body: ' + copyResp.getContentText().slice(0, 250) + '\n';
+                msg += '  STATUS: COPY FAILED\n';
+              }
+            } catch(ce) {
+              msg += '  STATUS: EXCEPTION - ' + ce.message + '\n';
+            }
+          }
+        } else if (isDoc) {
+          msg += '  Type: Word/Doc\n';
+          try {
+            DocumentApp.openById(file.getId());
+            msg += '  STATUS: OK - readable\n';
+          } catch(e) {
+            msg += '  STATUS: FAILED - ' + e.message + '\n';
+          }
+        } else if (mime === 'application/pdf') {
+          msg += '  Type: PDF - sent directly to Gemini\n  STATUS: OK\n';
+        } else if (mime.startsWith('image/')) {
+          msg += '  Type: Image\n  STATUS: OK\n';
+        } else if (mime === 'text/plain') {
+          msg += '  Type: Text\n  STATUS: OK\n';
+        } else {
+          msg += '  STATUS: UNSUPPORTED MIME - would be skipped\n';
+        }
+      }
+      msg += '\n';
+    }
+
+    if (totalFiles === 0) {
+      msg += '\nNO FILES FOUND IN ANY FOLDER!\n';
+    } else {
+      msg += '\nTotal files scanned: ' + totalFiles + '\n';
+    }
+
+  } catch(e) {
+    msg += 'OUTER ERROR: ' + e.message + '\n';
+  }
+
+  // Show in chunks if too long (Apps Script alert has ~4000 char limit)
+  const CHUNK = 1800;
+  for (let i = 0; i < msg.length; i += CHUNK) {
+    SpreadsheetApp.getUi().alert(msg.slice(i, i + CHUNK));
+  }
+}
+
+// -- About -----------------------------------------------------------------------
 
 function showAbout() {
   SpreadsheetApp.getUi().alert(
@@ -358,18 +545,20 @@ function getEvidenceFiles(rootFolderId, controlId) {
       return evidence;
     }
 
-    // Prefer an "input" subfolder if it exists; otherwise read files directly
-    // from the Control ID folder itself.
-    let inputFolder = ctrlFolder;
-    const inputFolders = ctrlFolder.getFoldersByName('input');
-    if (inputFolders.hasNext()) {
-      inputFolder = inputFolders.next();
-    }
+    // Collect files from the control folder AND all its subfolders.
+    // This handles: files in root, files in "input/", files in any other subfolder.
+    const foldersToScan = [ctrlFolder];
+    const subIter = ctrlFolder.getFolders();
+    while (subIter.hasNext()) foldersToScan.push(subIter.next());
 
-    // Collect all files
-    const files = inputFolder.getFiles();
-    while (files.hasNext()) {
-      const file = files.next();
+    const allFiles = [];
+    for (const folder of foldersToScan) {
+      const fi = folder.getFiles();
+      while (fi.hasNext()) allFiles.push(fi.next());
+    }
+    Logger.log(controlId + ': found ' + allFiles.length + ' files across ' + foldersToScan.length + ' folder(s)');
+
+    for (const file of allFiles) {
       const name     = file.getName();
       const mimeType = file.getMimeType();
       const sizeBytes = file.getSize();
@@ -377,6 +566,14 @@ function getEvidenceFiles(rootFolderId, controlId) {
       // Skip very large files (>8 MB - Gemini inline limit)
       if (sizeBytes > 8 * 1024 * 1024) {
         Logger.log('Skipping large file: ' + name + ' (' + sizeBytes + ' bytes)');
+        evidence.push({
+          name: name + '_note.txt',
+          mimeType: 'text/plain',
+          data: Utilities.base64Encode(Utilities.newBlob(
+            'Evidence file present but too large to send (> 8 MB): ' + name +
+            ' (' + (sizeBytes / 1024 / 1024).toFixed(1) + ' MB)',
+            'text/plain; charset=utf-8').getBytes()),
+        });
         continue;
       }
 
