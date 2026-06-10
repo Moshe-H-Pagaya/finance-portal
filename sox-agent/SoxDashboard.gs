@@ -60,6 +60,9 @@ function diagnose() {
     procedures : findCol('procedure') >= 0 ? findCol('procedure') :
                  (findCol('testing procedure') >= 0 ? findCol('testing procedure') :
                  (findCol('testing') >= 0 ? findCol('testing') : -1)),
+    period     : findCol('testing period') >= 0 ? findCol('testing period') :
+                 (findCol('test period') >= 0 ? findCol('test period') :
+                 (findCol('period') >= 0 ? findCol('period') : -1)),
     run        : findCol('run'),
     result    : findCol('result') >= 0 ? findCol('result') : (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
     gaps      : findCol('gap') >= 0 ? findCol('gap') : (findCol('notes') >= 0 ? findCol('notes') : findCol('finding')),
@@ -109,6 +112,7 @@ function diagnose() {
     '  Control Desc      : ' + (C.name       >= 0 ? headers[C.name]       + ' (col ' + (C.name+1)       + ')' : 'NOT FOUND') + '\n' +
     '  Test Plan         : ' + (C.objective  >= 0 ? headers[C.objective]  + ' (col ' + (C.objective+1)  + ')' : 'NOT FOUND') + '\n' +
     '  Testing Procedures: ' + (C.procedures >= 0 ? headers[C.procedures] + ' (col ' + (C.procedures+1) + ')' : 'NOT FOUND') + '\n' +
+    '  Testing Period    : ' + (C.period     >= 0 ? headers[C.period]     + ' (col ' + (C.period+1)     + ')' : 'NOT FOUND') + '\n' +
     '  Run?              : ' + (C.run        >= 0 ? headers[C.run]        + ' (col ' + (C.run+1)        + ')' : 'NOT FOUND') + '\n' +
     '  Result      : ' + (C.result >= 0     ? headers[C.result]     + ' (col ' + (C.result+1)     + ')' : 'NOT FOUND') + '\n' +
     '  Gaps/Notes  : ' + (C.gaps >= 0       ? headers[C.gaps]       + ' (col ' + (C.gaps+1)       + ')' : 'NOT FOUND') + '\n' +
@@ -434,6 +438,10 @@ function runSoxTests() {
     procedures : findCol('procedure') >= 0 ? findCol('procedure') :
                  (findCol('testing procedure') >= 0 ? findCol('testing procedure') :
                  (findCol('testing') >= 0 ? findCol('testing') : -1)),
+    // "Testing period" — the date range evidence must fall within
+    period     : findCol('testing period') >= 0 ? findCol('testing period') :
+                 (findCol('test period') >= 0 ? findCol('test period') :
+                 (findCol('period') >= 0 ? findCol('period') : -1)),
     run        : findCol('run'),
     result     : findCol('result') >= 0 ? findCol('result') :
                  (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
@@ -465,6 +473,7 @@ function runSoxTests() {
     const ctrlName   = C.name      >= 0 ? String(row[C.name]      || '').trim() : '';
     const objective   = C.objective   >= 0 ? String(row[C.objective]   || '').trim() : '';
     const procedures  = C.procedures  >= 0 ? String(row[C.procedures]  || '').trim() : '';
+    const period      = C.period      >= 0 ? String(row[C.period]      || '').trim() : '';
 
     if (!controlId) continue;
 
@@ -477,7 +486,7 @@ function runSoxTests() {
     // Call Gemini
     let result;
     try {
-      result = analyzeControl(apiKey, controlId, ctrlName, objective, procedures, evidence);
+      result = analyzeControl(apiKey, controlId, ctrlName, objective, procedures, period, evidence);
     } catch (e) {
       result = { verdict: 'Failed', gaps: ['Agent error: ' + e.message], summary: String(e) };
     }
@@ -742,24 +751,41 @@ function resolveGeminiMime(filename, driveMime) {
 
 // -- Gemini analysis ------------------------------------------------------------
 
-function analyzeControl(apiKey, controlId, controlName, controlObjective, testingProcedures, evidence) {
+function analyzeControl(apiKey, controlId, controlName, controlObjective, testingProcedures, testingPeriod, evidence) {
   const GEMINI_MODEL = 'gemini-2.5-flash';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
               GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
+  const periodLine = testingPeriod
+    ? 'Testing Period:      ' + testingPeriod + '\n'
+    : '';
+
   const promptText =
-    'You are a SOX (Sarbanes-Oxley) compliance auditor.\n\n' +
+    'You are a strict SOX (Sarbanes-Oxley) compliance auditor.\n\n' +
     'CONTROL DETAILS\n' +
     'Control ID:          ' + controlId + '\n' +
-    'Control Description: ' + (controlName       || '(not specified)') + '\n' +
-    'Test Plan:           ' + (controlObjective  || '(not specified)') + '\n' +
-    'Testing Procedures (Q1 2026): ' + (testingProcedures || '(not specified)') + '\n\n' +
+    'Control Description: ' + (controlName      || '(not specified)') + '\n' +
+    'Test Plan:           ' + (controlObjective || '(not specified)') + '\n' +
+    periodLine +
+    'Testing Procedures:  ' + (testingProcedures || '(not specified)') + '\n\n' +
+
+    'PASS CRITERIA — verdict must be "Passed" ONLY if ALL of the following are true:\n' +
+    '  1. Every step listed in "Testing Procedures" has clear, supporting evidence in the attached files.\n' +
+    '  2. The evidence dates fall within the Testing Period (' + (testingPeriod || 'as specified') + ').\n' +
+    '     Evidence dated outside this period does NOT satisfy any procedure step.\n' +
+    '  3. No required procedure step is missing, partial, or undated.\n' +
+    'If ANY step lacks adequate, in-period evidence → verdict must be "Failed".\n\n' +
+
     'INSTRUCTIONS\n' +
-    '1. Review all attached evidence files carefully.\n' +
-    '2. Use the Testing Procedures above as your checklist — verify each step has evidence.\n' +
-    '3. Determine whether the evidence shows the control is operating effectively.\n' +
-    '4. If failing, list specific, actionable gaps tied to the testing procedures — not vague statements.\n\n' +
-    'RESPONSE FORMAT - respond with valid JSON only, no markdown fences:\n' +
+    '1. Read each attached evidence file carefully, noting all dates visible in the data.\n' +
+    '2. For each step in "Testing Procedures", determine:\n' +
+    '   a. Is there evidence covering this step?\n' +
+    '   b. Does the evidence date fall within the Testing Period?\n' +
+    '3. List every gap — missing steps, out-of-period dates, incomplete data — as a separate gap entry.\n' +
+    '4. Be specific: name the procedure step that failed and why (e.g. "Step 2: approval log shows date ' +
+    '01-Jan-2025, outside the required period").\n\n' +
+
+    'RESPONSE FORMAT — respond with valid JSON only, no markdown fences:\n' +
     '{\n' +
     '  "verdict": "Passed" or "Failed",\n' +
     '  "gaps": ["gap 1", "gap 2"],\n' +
