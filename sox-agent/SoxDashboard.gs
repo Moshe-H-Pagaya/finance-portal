@@ -60,9 +60,11 @@ function diagnose() {
     procedures : findCol('procedure') >= 0 ? findCol('procedure') :
                  (findCol('testing procedure') >= 0 ? findCol('testing procedure') :
                  (findCol('testing') >= 0 ? findCol('testing') : -1)),
-    period     : findCol('testing period') >= 0 ? findCol('testing period') :
-                 (findCol('test period') >= 0 ? findCol('test period') :
-                 (findCol('period') >= 0 ? findCol('period') : -1)),
+    period      : findCol('testing period') >= 0 ? findCol('testing period') :
+                  (findCol('test period') >= 0 ? findCol('test period') :
+                  (findCol('period') >= 0 ? findCol('period') : -1)),
+    publishDate : findCol('publishing report') >= 0 ? findCol('publishing report') :
+                  (findCol('publish') >= 0 ? findCol('publish') : -1),
     run        : findCol('run'),
     result    : findCol('result') >= 0 ? findCol('result') : (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
     gaps      : findCol('gap') >= 0 ? findCol('gap') : (findCol('notes') >= 0 ? findCol('notes') : findCol('finding')),
@@ -112,8 +114,9 @@ function diagnose() {
     '  Control Desc      : ' + (C.name       >= 0 ? headers[C.name]       + ' (col ' + (C.name+1)       + ')' : 'NOT FOUND') + '\n' +
     '  Test Plan         : ' + (C.objective  >= 0 ? headers[C.objective]  + ' (col ' + (C.objective+1)  + ')' : 'NOT FOUND') + '\n' +
     '  Testing Procedures: ' + (C.procedures >= 0 ? headers[C.procedures] + ' (col ' + (C.procedures+1) + ')' : 'NOT FOUND') + '\n' +
-    '  Testing Period    : ' + (C.period     >= 0 ? headers[C.period]     + ' (col ' + (C.period+1)     + ')' : 'NOT FOUND') + '\n' +
-    '  Run?              : ' + (C.run        >= 0 ? headers[C.run]        + ' (col ' + (C.run+1)        + ')' : 'NOT FOUND') + '\n' +
+    '  Testing Period    : ' + (C.period      >= 0 ? headers[C.period]      + ' (col ' + (C.period+1)      + ')' : 'NOT FOUND') + '\n' +
+    '  Publishing Date   : ' + (C.publishDate >= 0 ? headers[C.publishDate] + ' (col ' + (C.publishDate+1) + ')' : 'NOT FOUND') + '\n' +
+    '  Run?              : ' + (C.run         >= 0 ? headers[C.run]         + ' (col ' + (C.run+1)         + ')' : 'NOT FOUND') + '\n' +
     '  Result      : ' + (C.result >= 0     ? headers[C.result]     + ' (col ' + (C.result+1)     + ')' : 'NOT FOUND') + '\n' +
     '  Gaps/Notes  : ' + (C.gaps >= 0       ? headers[C.gaps]       + ' (col ' + (C.gaps+1)       + ')' : 'NOT FOUND') + '\n' +
     '  Last Run    : ' + (C.lastRun >= 0    ? headers[C.lastRun]    + ' (col ' + (C.lastRun+1)    + ')' : 'NOT FOUND') + '\n\n' +
@@ -439,9 +442,12 @@ function runSoxTests() {
                  (findCol('testing procedure') >= 0 ? findCol('testing procedure') :
                  (findCol('testing') >= 0 ? findCol('testing') : -1)),
     // "Testing period" — the date range evidence must fall within
-    period     : findCol('testing period') >= 0 ? findCol('testing period') :
-                 (findCol('test period') >= 0 ? findCol('test period') :
-                 (findCol('period') >= 0 ? findCol('period') : -1)),
+    period      : findCol('testing period') >= 0 ? findCol('testing period') :
+                  (findCol('test period') >= 0 ? findCol('test period') :
+                  (findCol('period') >= 0 ? findCol('period') : -1)),
+    // "Publishing report date" — review/sign-off must be on or before this date
+    publishDate : findCol('publishing report') >= 0 ? findCol('publishing report') :
+                  (findCol('publish') >= 0 ? findCol('publish') : -1),
     run        : findCol('run'),
     result     : findCol('result') >= 0 ? findCol('result') :
                  (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
@@ -460,6 +466,21 @@ function runSoxTests() {
     return;
   }
 
+  // -- Run History tab -------------------------------------------------------
+  const RUN_HISTORY_TAB = 'Run History';
+  const runnerEmail = Session.getActiveUser().getEmail() || 'unknown';
+  let historySheet = ss.getSheetByName(RUN_HISTORY_TAB);
+  if (!historySheet) {
+    historySheet = ss.insertSheet(RUN_HISTORY_TAB);
+    historySheet.appendRow(['Run Date', 'Control ID', 'Control Name', 'Verdict', 'Gaps / Notes', 'Run By']);
+    historySheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#4a86e8').setFontColor('#ffffff');
+    historySheet.setFrozenRows(1);
+    historySheet.setColumnWidth(1, 160);
+    historySheet.setColumnWidth(4, 80);
+    historySheet.setColumnWidth(5, 400);
+    historySheet.setColumnWidth(6, 200);
+  }
+
   // -- Process rows ----------------------------------------------------------
   let processed = 0;
   let failed    = 0;
@@ -474,6 +495,7 @@ function runSoxTests() {
     const objective   = C.objective   >= 0 ? String(row[C.objective]   || '').trim() : '';
     const procedures  = C.procedures  >= 0 ? String(row[C.procedures]  || '').trim() : '';
     const period      = C.period      >= 0 ? String(row[C.period]      || '').trim() : '';
+    const publishDate = C.publishDate >= 0 ? String(row[C.publishDate] || '').trim() : '';
 
     if (!controlId) continue;
 
@@ -486,7 +508,7 @@ function runSoxTests() {
     // Call Gemini
     let result;
     try {
-      result = analyzeControl(apiKey, controlId, ctrlName, objective, procedures, period, evidence);
+      result = analyzeControl(apiKey, controlId, ctrlName, objective, procedures, period, publishDate, evidence);
     } catch (e) {
       result = { verdict: 'Failed', gaps: ['Agent error: ' + e.message], summary: String(e) };
     }
@@ -510,10 +532,29 @@ function runSoxTests() {
       sheet.getRange(rowNum, C.gaps + 1).setValue(result.summary || '');
     }
 
-    // Write timestamp
+    const runTime = new Date();
+
+    // Write timestamp to main sheet
     if (C.lastRun >= 0) {
-      sheet.getRange(rowNum, C.lastRun + 1).setValue(new Date().toLocaleString());
+      sheet.getRange(rowNum, C.lastRun + 1).setValue(runTime.toLocaleString());
     }
+
+    // Append to Run History tab
+    const gapSummary = result.gaps && result.gaps.length
+      ? result.gaps.map(g => '- ' + g).join('\n')
+      : (result.summary || '');
+    const histRow = historySheet.appendRow([
+      runTime,
+      controlId,
+      ctrlName,
+      result.verdict,
+      gapSummary,
+      runnerEmail,
+    ]);
+    const newRowNum = historySheet.getLastRow();
+    historySheet.getRange(newRowNum, 4).setBackground(
+      result.verdict === 'Passed' ? '#d9ead3' : '#fce5cd'
+    );
 
     processed++;
     if (result.verdict !== 'Passed') failed++;
@@ -751,54 +792,55 @@ function resolveGeminiMime(filename, driveMime) {
 
 // -- Gemini analysis ------------------------------------------------------------
 
-function analyzeControl(apiKey, controlId, controlName, controlObjective, testingProcedures, testingPeriod, evidence) {
+function analyzeControl(apiKey, controlId, controlName, controlObjective, testingProcedures, testingPeriod, publishingReportDate, evidence) {
   const GEMINI_MODEL = 'gemini-2.5-pro';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
               GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
-  const periodLine = testingPeriod
-    ? 'Testing Period:      ' + testingPeriod + '\n'
+  const publishLine = publishingReportDate
+    ? 'Publishing Report Date: ' + publishingReportDate + '\n'
     : '';
 
   const promptText =
     'You are a strict SOX (Sarbanes-Oxley) compliance auditor.\n\n' +
     'CONTROL DETAILS\n' +
-    'Control ID:          ' + controlId + '\n' +
-    'Control Description: ' + (controlName      || '(not specified)') + '\n' +
-    'Test Plan:           ' + (controlObjective || '(not specified)') + '\n' +
-    periodLine +
-    'Testing Procedures:  ' + (testingProcedures || '(not specified)') + '\n\n' +
+    'Control ID:             ' + controlId + '\n' +
+    'Control Description:    ' + (controlName      || '(not specified)') + '\n' +
+    'Test Plan:              ' + (controlObjective || '(not specified)') + '\n' +
+    'Testing Period:         ' + (testingPeriod    || '(not specified)') + '\n' +
+    publishLine +
+    'Testing Procedures:     ' + (testingProcedures || '(not specified)') + '\n\n' +
 
-    'TESTING PERIOD RULES\n' +
-    'Testing Period: ' + (testingPeriod || 'as specified') + '\n' +
-    'Apply these date rules:\n' +
-    '  - CONTROL EVIDENCE (transactions, system logs, approvals, access lists, etc.):\n' +
-    '    Must fall within the Testing Period. Evidence clearly outside the period does NOT count.\n' +
-    '  - WORKING PAPER REVIEW / AUDITOR SIGN-OFF / SUPERVISOR APPROVAL:\n' +
-    '    These are expected AFTER the period ends. Dates up to 6 weeks after the Testing Period\n' +
-    '    end are acceptable and must NOT be flagged as out-of-period.\n' +
-    '  - If you are unsure whether a date relates to the control execution or the review process,\n' +
-    '    give the benefit of the doubt and treat it as acceptable.\n\n' +
+    'DATE RULES\n' +
+    '  - CONTROL EVIDENCE (transactions, system logs, access lists, approvals of transactions):\n' +
+    '    Must fall within the Testing Period. Evidence outside this period does NOT count.\n' +
+    (publishingReportDate
+      ? '  - WORKING PAPER REVIEW / AUDITOR SIGN-OFF / SUPERVISOR APPROVAL OF THE TEST:\n' +
+        '    Must be on or before the Publishing Report Date (' + publishingReportDate + ').\n' +
+        '    A review date after the Publishing Report Date is a gap.\n' +
+        '    A review date between the Testing Period end and the Publishing Report Date is acceptable.\n'
+      : '  - WORKING PAPER REVIEW / AUDITOR SIGN-OFF / SUPERVISOR APPROVAL OF THE TEST:\n' +
+        '    These are expected after the period ends. Dates within a reasonable window after the\n' +
+        '    Testing Period end are acceptable and must NOT be flagged as out-of-period.\n') +
+    '  - If you are unsure whether a date is control-execution or review/sign-off,\n' +
+    '    give the benefit of the doubt.\n\n' +
 
     'PASS CRITERIA — verdict must be "Passed" ONLY if ALL of the following are true:\n' +
-    '  1. Every step listed in "Testing Procedures" has clear, supporting evidence.\n' +
-    '  2. All control-execution evidence dates fall within the Testing Period\n' +
-    '     (review/sign-off dates within 6 weeks after period end are acceptable).\n' +
-    '  3. No required procedure step is missing or has only partial evidence.\n' +
-    'If ANY step lacks adequate evidence → verdict must be "Failed".\n\n' +
+    '  1. Every step in "Testing Procedures" has clear, supporting evidence.\n' +
+    '  2. All control-execution evidence dates fall within the Testing Period.\n' +
+    (publishingReportDate
+      ? '  3. Review/sign-off date is on or before ' + publishingReportDate + '.\n'
+      : '  3. Review/sign-off dates fall within a reasonable window after the Testing Period.\n') +
+    '  4. No required procedure step is missing or has only partial evidence.\n' +
+    'If ANY criterion is not met → verdict must be "Failed".\n\n' +
 
     'INSTRUCTIONS\n' +
-    '1. Read each attached evidence file carefully, noting all dates and distinguishing\n' +
-    '   control-execution dates from review/sign-off dates.\n' +
-    '2. For each step in "Testing Procedures" evaluate:\n' +
-    '   a. Is there evidence covering this step?\n' +
-    '   b. Is the control-execution date within the Testing Period?\n' +
-    '3. Only flag a date as out-of-period if it clearly relates to control execution\n' +
-    '   (not review/sign-off) and falls outside the period.\n' +
-    '4. List every real gap as a separate entry. Be specific: name the procedure step\n' +
-    '   and the reason (e.g. "Step 2: no approval log found for Q1 2026").\n' +
-    '5. Do NOT flag working paper review dates, auditor signatures, or supervisor\n' +
-    '   approvals as out-of-period gaps even if they are after the period end.\n\n' +
+    '1. Read each evidence file carefully, noting all dates.\n' +
+    '2. Distinguish control-execution dates from review/sign-off dates.\n' +
+    '3. For each step in "Testing Procedures", verify evidence exists and dates are in range.\n' +
+    '4. List every gap as a separate entry. Be specific: name the step and reason\n' +
+    '   (e.g. "Step 2: no approval log found for Q1 2026").\n' +
+    '5. Do NOT flag review/sign-off dates as gaps if they are within the allowed window.\n\n' +
 
     'RESPONSE FORMAT — respond with valid JSON only, no markdown fences:\n' +
     '{\n' +
