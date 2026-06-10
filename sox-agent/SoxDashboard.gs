@@ -416,23 +416,45 @@ function getEvidenceFiles(rootFolderId, controlId) {
               }
             );
             if (copyResp.getResponseCode() !== 200) {
-              Logger.log('Drive copy failed for ' + name + ': ' + copyResp.getContentText().slice(0, 200));
+              const errMsg = 'Drive copy failed for "' + name + '": HTTP ' +
+                             copyResp.getResponseCode() + ' — ' +
+                             copyResp.getContentText().slice(0, 300);
+              Logger.log(errMsg);
+              // Still push a text note so Gemini knows the file exists
+              evidence.push({
+                name: name + '_note.txt',
+                mimeType: 'text/plain',
+                data: Utilities.base64Encode(
+                  Utilities.newBlob(
+                    'Evidence file present but could not be converted: ' + name + '\n' + errMsg,
+                    'text/plain; charset=utf-8'
+                  ).getBytes()
+                ),
+              });
               continue;
             }
             tempId = JSON.parse(copyResp.getContentText()).id;
             ssId = tempId;
+            // Wait for Drive to finish creating the converted copy before opening it
+            Utilities.sleep(4000);
           }
 
           const ss = SpreadsheetApp.openById(ssId);
           let csv = '';
           ss.getSheets().forEach(function(s) {
+            const lastRow = s.getLastRow();
+            const lastCol = s.getLastColumn();
             csv += '=== Sheet: ' + s.getName() + ' ===\n';
-            s.getDataRange().getValues().forEach(function(row) {
-              csv += row.map(function(c) {
-                const v = String(c === null || c === undefined ? '' : c);
-                return v.indexOf(',') >= 0 || v.indexOf('"') >= 0 ? '"' + v.replace(/"/g,'""') + '"' : v;
-              }).join(',') + '\n';
-            });
+            if (lastRow > 0 && lastCol > 0) {
+              s.getRange(1, 1, lastRow, lastCol).getValues().forEach(function(row) {
+                csv += row.map(function(c) {
+                  const v = String(c === null || c === undefined ? '' : c);
+                  return v.indexOf(',') >= 0 || v.indexOf('"') >= 0 ? '"' + v.replace(/"/g,'""') + '"' : v;
+                }).join(',') + '\n';
+              });
+            } else {
+              csv += '(empty sheet)\n';
+            }
             csv += '\n';
           });
 
@@ -440,14 +462,27 @@ function getEvidenceFiles(rootFolderId, controlId) {
             try { DriveApp.getFileById(tempId).setTrashed(true); } catch(te) {}
           }
 
-          evidence.push({
-            name: name + '.txt',
-            mimeType: 'text/plain',
-            data: Utilities.base64Encode(Utilities.newBlob(csv, 'text/plain; charset=utf-8').getBytes()),
-          });
-          Logger.log('Converted spreadsheet to text: ' + name + ' (' + csv.length + ' chars)');
+          if (csv.trim().length > 0) {
+            evidence.push({
+              name: name + '.txt',
+              mimeType: 'text/plain',
+              data: Utilities.base64Encode(Utilities.newBlob(csv, 'text/plain; charset=utf-8').getBytes()),
+            });
+            Logger.log('Converted spreadsheet to text: ' + name + ' (' + ss.getSheets().length + ' tabs, ' + csv.length + ' chars)');
+          }
         } catch (e) {
           Logger.log('Failed to convert spreadsheet ' + name + ': ' + e.message);
+          // Push error note so Gemini knows the file exists
+          evidence.push({
+            name: name + '_note.txt',
+            mimeType: 'text/plain',
+            data: Utilities.base64Encode(
+              Utilities.newBlob(
+                'Evidence file present but conversion failed: ' + name + '\nError: ' + e.message,
+                'text/plain; charset=utf-8'
+              ).getBytes()
+            ),
+          });
         }
         continue;
       }
