@@ -752,7 +752,7 @@ function resolveGeminiMime(filename, driveMime) {
 // -- Gemini analysis ------------------------------------------------------------
 
 function analyzeControl(apiKey, controlId, controlName, controlObjective, testingProcedures, testingPeriod, evidence) {
-  const GEMINI_MODEL = 'gemini-2.5-flash';
+  const GEMINI_MODEL = 'gemini-2.5-pro';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
               GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
@@ -769,21 +769,36 @@ function analyzeControl(apiKey, controlId, controlName, controlObjective, testin
     periodLine +
     'Testing Procedures:  ' + (testingProcedures || '(not specified)') + '\n\n' +
 
+    'TESTING PERIOD RULES\n' +
+    'Testing Period: ' + (testingPeriod || 'as specified') + '\n' +
+    'Apply these date rules:\n' +
+    '  - CONTROL EVIDENCE (transactions, system logs, approvals, access lists, etc.):\n' +
+    '    Must fall within the Testing Period. Evidence clearly outside the period does NOT count.\n' +
+    '  - WORKING PAPER REVIEW / AUDITOR SIGN-OFF / SUPERVISOR APPROVAL:\n' +
+    '    These are expected AFTER the period ends. Dates up to 6 weeks after the Testing Period\n' +
+    '    end are acceptable and must NOT be flagged as out-of-period.\n' +
+    '  - If you are unsure whether a date relates to the control execution or the review process,\n' +
+    '    give the benefit of the doubt and treat it as acceptable.\n\n' +
+
     'PASS CRITERIA — verdict must be "Passed" ONLY if ALL of the following are true:\n' +
-    '  1. Every step listed in "Testing Procedures" has clear, supporting evidence in the attached files.\n' +
-    '  2. The evidence dates fall within the Testing Period (' + (testingPeriod || 'as specified') + ').\n' +
-    '     Evidence dated outside this period does NOT satisfy any procedure step.\n' +
-    '  3. No required procedure step is missing, partial, or undated.\n' +
-    'If ANY step lacks adequate, in-period evidence → verdict must be "Failed".\n\n' +
+    '  1. Every step listed in "Testing Procedures" has clear, supporting evidence.\n' +
+    '  2. All control-execution evidence dates fall within the Testing Period\n' +
+    '     (review/sign-off dates within 6 weeks after period end are acceptable).\n' +
+    '  3. No required procedure step is missing or has only partial evidence.\n' +
+    'If ANY step lacks adequate evidence → verdict must be "Failed".\n\n' +
 
     'INSTRUCTIONS\n' +
-    '1. Read each attached evidence file carefully, noting all dates visible in the data.\n' +
-    '2. For each step in "Testing Procedures", determine:\n' +
+    '1. Read each attached evidence file carefully, noting all dates and distinguishing\n' +
+    '   control-execution dates from review/sign-off dates.\n' +
+    '2. For each step in "Testing Procedures" evaluate:\n' +
     '   a. Is there evidence covering this step?\n' +
-    '   b. Does the evidence date fall within the Testing Period?\n' +
-    '3. List every gap — missing steps, out-of-period dates, incomplete data — as a separate gap entry.\n' +
-    '4. Be specific: name the procedure step that failed and why (e.g. "Step 2: approval log shows date ' +
-    '01-Jan-2025, outside the required period").\n\n' +
+    '   b. Is the control-execution date within the Testing Period?\n' +
+    '3. Only flag a date as out-of-period if it clearly relates to control execution\n' +
+    '   (not review/sign-off) and falls outside the period.\n' +
+    '4. List every real gap as a separate entry. Be specific: name the procedure step\n' +
+    '   and the reason (e.g. "Step 2: no approval log found for Q1 2026").\n' +
+    '5. Do NOT flag working paper review dates, auditor signatures, or supervisor\n' +
+    '   approvals as out-of-period gaps even if they are after the period end.\n\n' +
 
     'RESPONSE FORMAT — respond with valid JSON only, no markdown fences:\n' +
     '{\n' +
