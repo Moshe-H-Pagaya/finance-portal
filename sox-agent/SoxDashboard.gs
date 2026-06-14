@@ -19,6 +19,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('SOX Dashboard')
     .addItem('Run SOX Tests', 'runSoxTests')
+    .addItem('Open SOX Drive Folder', 'openSoxDriveFolder')
     .addSeparator()
     .addItem('Configure (API key & folder)', 'showConfig')
     .addItem('Setup Instructions & Colors', 'setupInstructions')
@@ -26,6 +27,19 @@ function onOpen() {
     .addItem('Test File Reading', 'testFileReading')
     .addItem('About', 'showAbout')
     .addToUi();
+}
+
+function openSoxDriveFolder() {
+  const folderId = PropertiesService.getScriptProperties().getProperty('SOX_DRIVE_FOLDER_ID');
+  if (!folderId) {
+    SpreadsheetApp.getUi().alert('Drive folder ID is not configured.\nGo to SOX Dashboard > Configure first.');
+    return;
+  }
+  const url = 'https://drive.google.com/drive/folders/' + folderId;
+  const html = HtmlService.createHtmlOutput(
+    '<script>window.open("' + url + '","_blank"); google.script.host.close();</script>'
+  ).setWidth(10).setHeight(10);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Opening Drive folder...');
 }
 
 // =============================================================================
@@ -290,17 +304,20 @@ function setupInstructions() {
   instrSheet.setTabColor('#1e3a5f');
   instrSheet.setFrozenRows(1);
 
-  // ── 3. Rebuild Run History tab ───────────────────────────────────────────
+  // ── 3. Run History tab — create if missing, preserve data if it exists ───
   const RUN_HISTORY_TAB = 'Run History';
-  let histSheet = ss.getSheetByName(RUN_HISTORY_TAB);
-  if (histSheet) ss.deleteSheet(histSheet);
-  histSheet = ss.insertSheet(RUN_HISTORY_TAB);
-
   const histHeaders = ['Run Date & Time', 'Run By', 'Control ID', 'Control Name',
                        'Testing Period', 'Verdict', 'Gaps / Notes'];
-  histSheet.appendRow(histHeaders);
+  let histSheet = ss.getSheetByName(RUN_HISTORY_TAB);
+  const histIsNew = !histSheet;
+  if (histIsNew) {
+    histSheet = ss.insertSheet(RUN_HISTORY_TAB);
+    histSheet.appendRow(histHeaders);
+  }
+  // Always reformat the header row and column widths (no data is touched)
   const hdr = histSheet.getRange(1, 1, 1, histHeaders.length);
-  hdr.setBackground('#1e3a5f').setFontColor('#ffffff').setFontWeight('bold').setFontSize(11);
+  hdr.setValues([histHeaders])
+     .setBackground('#1e3a5f').setFontColor('#ffffff').setFontWeight('bold').setFontSize(11);
   histSheet.setFrozenRows(1);
   histSheet.setColumnWidth(1, 165);
   histSheet.setColumnWidth(2, 200);
@@ -325,7 +342,7 @@ function setupInstructions() {
     '  Blue   = ' + geminiCols.length  + ' columns sent to Gemini\n' +
     '  Orange = ' + controlCols.length + ' column controls processing\n' +
     '  Green  = ' + outputCols.length  + ' columns written by script\n\n' +
-    'Run History tab rebuilt (previous history cleared).'
+    (histIsNew ? 'Run History tab created.' : 'Run History tab reformatted (existing data preserved).')
   );
 }
 
