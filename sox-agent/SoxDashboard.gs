@@ -710,12 +710,21 @@ function getEvidenceFiles(rootFolderId, controlId) {
           }
 
           if (csv.trim().length > 0) {
+            // Cap individual file at 300K chars (~75K tokens) — keep header row of each sheet
+            const MAX_FILE_CHARS = 300000;
+            let finalCsv = csv;
+            if (csv.length > MAX_FILE_CHARS) {
+              finalCsv = csv.slice(0, MAX_FILE_CHARS) +
+                '\n\n[TRUNCATED: file was ' + Math.round(csv.length / 1000) + 'K chars, showing first ' +
+                Math.round(MAX_FILE_CHARS / 1000) + 'K chars only]\n';
+              Logger.log('Truncated large spreadsheet: ' + name + ' from ' + csv.length + ' to ' + MAX_FILE_CHARS + ' chars');
+            }
             evidence.push({
               name: name + '.txt',
               mimeType: 'text/plain',
-              data: Utilities.base64Encode(Utilities.newBlob(csv, 'text/plain; charset=utf-8').getBytes()),
+              data: Utilities.base64Encode(Utilities.newBlob(finalCsv, 'text/plain; charset=utf-8').getBytes()),
             });
-            Logger.log('Converted spreadsheet to text: ' + name + ' (' + ss.getSheets().length + ' tabs, ' + csv.length + ' chars)');
+            Logger.log('Converted spreadsheet to text: ' + name + ' (' + ss.getSheets().length + ' tabs, ' + finalCsv.length + ' chars)');
           }
         } catch (e) {
           Logger.log('Failed to convert spreadsheet ' + name + ': ' + e.message);
@@ -857,13 +866,38 @@ function analyzeControl(apiKey, controlId, controlName, controlObjective, testin
   // Hard whitelist — Gemini inline API only accepts these types.
   const GEMINI_OK = { 'text/plain':true, 'application/pdf':true,
     'image/png':true, 'image/jpeg':true, 'image/gif':true, 'image/webp':true };
+
+  // Cap total evidence at ~600K chars (~150K tokens) to stay well within Gemini's 1M token limit
+  const MAX_TOTAL_CHARS = 600000;
+  let totalChars = 0;
+
   for (const ef of evidence) {
     if (!GEMINI_OK[ef.mimeType]) {
       Logger.log('Blocked unsupported MIME before Gemini call: ' + ef.mimeType + ' (' + ef.name + ')');
       continue;
     }
+    // Decode to check size, truncate if adding this file would exceed the total cap
+    const decoded = Utilities.newBlob(Utilities.base64Decode(ef.data)).getDataAsString();
+    if (totalChars + decoded.length > MAX_TOTAL_CHARS) {
+      const remaining = MAX_TOTAL_CHARS - totalChars;
+      if (remaining > 500) {
+        const truncated = decoded.slice(0, remaining) +
+          '\n\n[TRUNCATED: total evidence size limit reached — ' +
+          Math.round((decoded.length - remaining) / 1000) + 'K chars omitted from this file]\n';
+        parts.push({ inlineData: {
+          mimeType: 'text/plain',
+          data: Utilities.base64Encode(Utilities.newBlob(truncated, 'text/plain; charset=utf-8').getBytes()),
+        }});
+        Logger.log('Evidence total cap reached, partially included: ' + ef.name);
+      } else {
+        Logger.log('Evidence total cap reached, skipped: ' + ef.name);
+      }
+      break;
+    }
+    totalChars += decoded.length;
     parts.push({ inlineData: { mimeType: ef.mimeType, data: ef.data } });
   }
+  Logger.log('Total evidence sent to Gemini: ' + totalChars + ' chars across ' + (parts.length - 1) + ' file(s)');
 
   const payload = {
     contents: [{ role: 'user', parts: parts }],
