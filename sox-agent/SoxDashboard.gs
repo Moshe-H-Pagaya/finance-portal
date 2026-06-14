@@ -21,10 +21,312 @@ function onOpen() {
     .addItem('Run SOX Tests', 'runSoxTests')
     .addSeparator()
     .addItem('Configure (API key & folder)', 'showConfig')
+    .addItem('Setup Instructions & Colors', 'setupInstructions')
     .addItem('Diagnose (show column map)', 'diagnose')
     .addItem('Test File Reading', 'testFileReading')
     .addItem('About', 'showAbout')
     .addToUi();
+}
+
+// =============================================================================
+// SETUP: Instructions tab + Sheet1 header color-coding + Run History rebuild
+// =============================================================================
+
+function setupInstructions() {
+  const props   = PropertiesService.getScriptProperties();
+  const tabName = props.getProperty('SOX_SHEET_TAB') || 'Sheet1';
+  const ss      = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet   = ss.getSheetByName(tabName);
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('Sheet "' + tabName + '" not found. Run Configure first.');
+    return;
+  }
+
+  // ── Detect columns (same logic as runSoxTests) ──────────────────────────
+  const rawHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headers    = rawHeaders.map(h => String(h).trim());
+  const headersLow = headers.map(h => h.toLowerCase());
+
+  function findCol() {
+    const kws = Array.from(arguments);
+    for (let i = 0; i < headersLow.length; i++) {
+      if (kws.every(k => headersLow[i].includes(k.toLowerCase()))) return i;
+    }
+    return -1;
+  }
+
+  const C = {
+    controlId  : findCol('control', 'id'),
+    name       : findCol('control', 'activity') >= 0 ? findCol('control', 'activity') :
+                 (findCol('control', 'name') >= 0 ? findCol('control', 'name') : findCol('name')),
+    objective  : findCol('objective') >= 0 ? findCol('objective') :
+                 (findCol('test plan') >= 0 ? findCol('test plan') : findCol('description')),
+    procedures : findCol('procedure') >= 0 ? findCol('procedure') :
+                 (findCol('testing procedure') >= 0 ? findCol('testing procedure') :
+                 (findCol('testing') >= 0 ? findCol('testing') : -1)),
+    period     : findCol('testing period') >= 0 ? findCol('testing period') :
+                 (findCol('test period') >= 0 ? findCol('test period') :
+                 (findCol('period') >= 0 ? findCol('period') : -1)),
+    publishDate: findCol('publishing report') >= 0 ? findCol('publishing report') :
+                 (findCol('publish') >= 0 ? findCol('publish') : -1),
+    run        : findCol('run'),
+    result     : findCol('result') >= 0 ? findCol('result') :
+                 (findCol('pass') >= 0 ? findCol('pass') : findCol('verdict')),
+    gaps       : findCol('gap') >= 0 ? findCol('gap') :
+                 (findCol('notes') >= 0 ? findCol('notes') : findCol('finding')),
+    lastRun    : findCol('last run') >= 0 ? findCol('last run') :
+                 (findCol('timestamp') >= 0 ? findCol('timestamp') : findCol('date')),
+  };
+
+  // ── Color palette ────────────────────────────────────────────────────────
+  const COLOR = {
+    gemini    : { bg: '#c9daf8', text: '#1155cc', label: 'Sent to Gemini (AI input)'       },
+    output    : { bg: '#d9ead3', text: '#38761d', label: 'Written by the script (output)'  },
+    control   : { bg: '#fce5cd', text: '#b45309', label: 'Controls processing (trigger)'   },
+    unused    : { bg: '#f3f3f3', text: '#666666', label: 'Other columns (not used)'         },
+    sectionHdr: '#1e3a5f',
+    white     : '#ffffff',
+    titleBg   : '#1e3a5f',
+  };
+
+  // Columns by group (0-indexed)
+  const geminiCols  = [C.controlId, C.name, C.objective, C.procedures, C.period, C.publishDate].filter(c => c >= 0);
+  const outputCols  = [C.result, C.gaps, C.lastRun].filter(c => c >= 0);
+  const controlCols = [C.run].filter(c => c >= 0);
+
+  // ── 1. Color-code Sheet1 header row ─────────────────────────────────────
+  const headerRange = sheet.getRange(1, 1, 1, sheet.getLastColumn());
+  headerRange.setBackground(COLOR.unused.bg).setFontColor(COLOR.unused.text).setFontWeight('normal');
+
+  function colorCols(cols, bg, textColor) {
+    cols.forEach(c => {
+      const cell = sheet.getRange(1, c + 1);
+      cell.setBackground(bg).setFontColor(textColor).setFontWeight('bold');
+    });
+  }
+  colorCols(geminiCols,  COLOR.gemini.bg,  COLOR.gemini.text);
+  colorCols(outputCols,  COLOR.output.bg,  COLOR.output.text);
+  colorCols(controlCols, COLOR.control.bg, COLOR.control.text);
+
+  // ── 2. Rebuild Instructions tab ─────────────────────────────────────────
+  let instrSheet = ss.getSheetByName('Instructions');
+  if (instrSheet) ss.deleteSheet(instrSheet);
+  instrSheet = ss.insertSheet('Instructions');
+
+  // Helper: write a styled row
+  function writeRow(rowIdx, values, bgColor, textColor, bold, fontSize, merged) {
+    const r = instrSheet.getRange(rowIdx, 1, 1, values.length);
+    r.setValues([values]);
+    if (bgColor)   r.setBackground(bgColor);
+    if (textColor) r.setFontColor(textColor);
+    if (bold)      r.setFontWeight('bold');
+    if (fontSize)  r.setFontSize(fontSize);
+    if (merged && values.length > 1) instrSheet.getRange(rowIdx, 1, 1, 5).merge();
+  }
+
+  function sectionHeader(rowIdx, title) {
+    instrSheet.getRange(rowIdx, 1, 1, 5).merge()
+      .setValue(title)
+      .setBackground(COLOR.sectionHdr)
+      .setFontColor(COLOR.white)
+      .setFontWeight('bold')
+      .setFontSize(11);
+  }
+
+  function colName(idx) {
+    return idx >= 0 ? '"' + headers[idx] + '" (col ' + (idx + 1) + ')' : 'Not found';
+  }
+
+  let row = 1;
+
+  // Title
+  instrSheet.getRange(row, 1, 1, 5).merge()
+    .setValue('SOX Dashboard Agent — Instructions')
+    .setBackground(COLOR.titleBg)
+    .setFontColor(COLOR.white)
+    .setFontWeight('bold')
+    .setFontSize(16);
+  instrSheet.setRowHeight(row, 40);
+  row++;
+
+  instrSheet.getRange(row, 1, 1, 5).merge()
+    .setValue('Last updated: ' + new Date().toLocaleString() + '  |  Main data tab: "' + tabName + '"')
+    .setBackground('#3c5f91')
+    .setFontColor('#d9e8ff')
+    .setFontSize(9)
+    .setFontStyle('italic');
+  row += 2;
+
+  // ── HOW IT WORKS ─────────────────────────────────────────────────────────
+  sectionHeader(row, '  HOW IT WORKS'); row++;
+  const howItWorks = [
+    ['1.', 'Read sheet', 'The script reads every row in "' + tabName + '" where the Run? column = "Yes".'],
+    ['2.', 'Find evidence files', 'For each row it looks up the Drive folder with the same name as the Control ID (case-insensitive). All files inside that folder (and subfolders) are collected.'],
+    ['3.', 'Convert files', 'XLSX / Google Sheets files are converted to text (all tabs). Word/Docs files are extracted as plain text. PDFs and images are sent as-is. Files over 300 KB of text are trimmed.'],
+    ['4.', 'Call Gemini AI', 'The control details + evidence files are sent to Google Gemini (gemini-2.5-pro). Gemini checks whether every step in the Testing Procedures has adequate, in-period evidence.'],
+    ['5.', 'Write results', 'The verdict (Passed / Failed), gaps, and timestamp are written back to the row. A record is also appended to the Run History tab.'],
+  ];
+  howItWorks.forEach(([num, title, desc]) => {
+    instrSheet.getRange(row, 1).setValue(num).setFontWeight('bold');
+    instrSheet.getRange(row, 2).setValue(title).setFontWeight('bold');
+    instrSheet.getRange(row, 3, 1, 3).merge().setValue(desc);
+    row++;
+  });
+  row++;
+
+  // ── PASS / FAIL RULES ────────────────────────────────────────────────────
+  sectionHeader(row, '  PASS / FAIL RULES'); row++;
+  const rules = [
+    ['PASSED', 'ALL testing procedure steps have clear evidence within the Testing Period, and the review/sign-off date is on or before the Publishing Report Date.'],
+    ['FAILED', 'Any procedure step is missing evidence, evidence is outside the Testing Period, or the review date is after the Publishing Report Date.'],
+    ['Grace period', 'Review/sign-off dates (auditor approval, supervisor sign-off on working papers) that fall between the Testing Period end and the Publishing Report Date are acceptable.'],
+  ];
+  rules.forEach(([verdict, desc]) => {
+    instrSheet.getRange(row, 1).setValue(verdict).setFontWeight('bold')
+      .setBackground(verdict === 'PASSED' ? '#d9ead3' : verdict === 'FAILED' ? '#fce5cd' : '#f3f3f3');
+    instrSheet.getRange(row, 2, 1, 4).merge().setValue(desc);
+    row++;
+  });
+  row++;
+
+  // ── DRIVE FOLDER STRUCTURE ───────────────────────────────────────────────
+  sectionHeader(row, '  DRIVE FOLDER STRUCTURE'); row++;
+  const driveLines = [
+    ['Root folder', '(configured in SOX Dashboard > Configure — paste the folder ID from the Drive URL)'],
+    ['', ''],
+    ['', 'SOX_Dashboards/                    ← Root folder'],
+    ['', '   IL.FSCP.04/                      ← Folder name must match Control ID exactly'],
+    ['', '      evidence_file.xlsx            ← Files directly in control folder'],
+    ['', '      another_file.pdf'],
+    ['', '   IL.FSCP.06/'],
+    ['', '      input/                         ← OR files in an "input" subfolder'],
+    ['', '         evidence.xlsx'],
+  ];
+  driveLines.forEach(([label, desc]) => {
+    instrSheet.getRange(row, 1).setValue(label).setFontWeight(label ? 'bold' : 'normal');
+    instrSheet.getRange(row, 2, 1, 4).merge().setValue(desc)
+      .setFontFamily(label ? null : 'Courier New').setFontSize(label ? 10 : 9);
+    row++;
+  });
+  row++;
+
+  // ── COLUMN REFERENCE ─────────────────────────────────────────────────────
+  sectionHeader(row, '  COLUMN REFERENCE — "' + tabName + '" tab'); row++;
+
+  // Legend row
+  const legendCols = [COLOR.gemini, COLOR.control, COLOR.output];
+  ['Color', 'Group', 'Description', '', ''].forEach((h, i) => {
+    instrSheet.getRange(row, i + 1).setValue(h).setFontWeight('bold')
+      .setBackground('#e8eaf6').setFontColor('#333333');
+  });
+  row++;
+  legendCols.forEach(g => {
+    instrSheet.getRange(row, 1).setBackground(g.bg);
+    instrSheet.getRange(row, 2, 1, 4).merge().setValue(g.label)
+      .setBackground(g.bg).setFontColor(g.text).setFontWeight('bold');
+    row++;
+  });
+  instrSheet.getRange(row, 1).setBackground(COLOR.unused.bg);
+  instrSheet.getRange(row, 2, 1, 4).merge().setValue(COLOR.unused.label)
+    .setBackground(COLOR.unused.bg).setFontColor(COLOR.unused.text);
+  row += 2;
+
+  // Column table header
+  ['Column #', 'Header in sheet', 'Role', 'Color group', 'Notes'].forEach((h, i) => {
+    instrSheet.getRange(row, i + 1).setValue(h).setFontWeight('bold')
+      .setBackground('#e8eaf6');
+  });
+  row++;
+
+  function colRow(idx, role, colorGroup, notes) {
+    const g = COLOR[colorGroup] || COLOR.unused;
+    const cells = instrSheet.getRange(row, 1, 1, 5);
+    cells.setValues([[
+      idx >= 0 ? 'Col ' + (idx + 1) : 'N/A',
+      idx >= 0 ? headers[idx] : '(not detected)',
+      role,
+      g.label,
+      notes || '',
+    ]]);
+    cells.setBackground(g.bg);
+    if (colorGroup !== 'unused') cells.setFontColor(g.text);
+    row++;
+  }
+
+  colRow(C.controlId,   'Control ID',              'gemini',  'Must match the Drive folder name');
+  colRow(C.name,        'Control Description',     'gemini',  'Describes what the control does');
+  colRow(C.objective,   'Test Plan',                'gemini',  'High-level testing objective');
+  colRow(C.procedures,  'Testing Procedures',       'gemini',  'Checklist — every step must have evidence');
+  colRow(C.period,      'Testing Period',           'gemini',  'Date range evidence must fall within');
+  colRow(C.publishDate, 'Publishing Report Date',   'gemini',  'Review/sign-off must be on or before this date');
+  row++;
+  colRow(C.run,         'Run? (Yes / No)',          'control', 'Set to "Yes" to include this row in the next run');
+  row++;
+  colRow(C.result,      'Passed / Failed',          'output',  'Written by script — green = Passed, orange = Failed');
+  colRow(C.gaps,        'Gaps / Notes',             'output',  'Written by script — lists each gap with step reference');
+  colRow(C.lastRun,     'Last Run date and Time',   'output',  'Written by script — timestamp of last run');
+  row += 2;
+
+  // ── CONFIGURATION ────────────────────────────────────────────────────────
+  sectionHeader(row, '  CONFIGURATION  (SOX Dashboard > Configure)'); row++;
+  const configRows = [
+    ['Gemini API Key', 'Get a free key at https://aistudio.google.com/apikey  —  required for AI analysis'],
+    ['Drive Folder ID', 'Open the root SOX evidence folder in Drive, copy the ID from the URL (the part after /folders/)'],
+    ['Sheet Tab Name', 'Name of the tab that contains the control list (default: Sheet1)'],
+  ];
+  configRows.forEach(([setting, desc]) => {
+    instrSheet.getRange(row, 1).setValue(setting).setFontWeight('bold').setBackground('#f8f9fa');
+    instrSheet.getRange(row, 2, 1, 4).merge().setValue(desc).setBackground('#f8f9fa');
+    row++;
+  });
+
+  // ── Format Instructions sheet ────────────────────────────────────────────
+  instrSheet.setColumnWidth(1, 120);
+  instrSheet.setColumnWidth(2, 220);
+  instrSheet.setColumnWidth(3, 320);
+  instrSheet.setColumnWidth(4, 200);
+  instrSheet.setColumnWidth(5, 260);
+  instrSheet.setTabColor('#1e3a5f');
+  instrSheet.setFrozenRows(1);
+
+  // ── 3. Rebuild Run History tab ───────────────────────────────────────────
+  const RUN_HISTORY_TAB = 'Run History';
+  let histSheet = ss.getSheetByName(RUN_HISTORY_TAB);
+  if (histSheet) ss.deleteSheet(histSheet);
+  histSheet = ss.insertSheet(RUN_HISTORY_TAB);
+
+  const histHeaders = ['Run Date & Time', 'Run By', 'Control ID', 'Control Name',
+                       'Testing Period', 'Verdict', 'Gaps / Notes'];
+  histSheet.appendRow(histHeaders);
+  const hdr = histSheet.getRange(1, 1, 1, histHeaders.length);
+  hdr.setBackground('#1e3a5f').setFontColor('#ffffff').setFontWeight('bold').setFontSize(11);
+  histSheet.setFrozenRows(1);
+  histSheet.setColumnWidth(1, 165);
+  histSheet.setColumnWidth(2, 200);
+  histSheet.setColumnWidth(3, 110);
+  histSheet.setColumnWidth(4, 220);
+  histSheet.setColumnWidth(5, 150);
+  histSheet.setColumnWidth(6, 90);
+  histSheet.setColumnWidth(7, 450);
+  histSheet.setTabColor('#38761d');
+
+  // Move sheets to logical order: main sheet, Instructions, Run History
+  ss.setActiveSheet(instrSheet);
+  ss.moveActiveSheet(2);
+  ss.setActiveSheet(histSheet);
+  ss.moveActiveSheet(3);
+  ss.setActiveSheet(sheet);
+
+  SpreadsheetApp.getUi().alert(
+    'Done!\n\n' +
+    'Instructions tab created with column reference.\n' +
+    'Sheet1 header row color-coded:\n' +
+    '  Blue   = ' + geminiCols.length  + ' columns sent to Gemini\n' +
+    '  Orange = ' + controlCols.length + ' column controls processing\n' +
+    '  Green  = ' + outputCols.length  + ' columns written by script\n\n' +
+    'Run History tab rebuilt (previous history cleared).'
+  );
 }
 
 function diagnose() {
@@ -543,16 +845,17 @@ function runSoxTests() {
     const gapSummary = result.gaps && result.gaps.length
       ? result.gaps.map(g => '- ' + g).join('\n')
       : (result.summary || '');
-    const histRow = historySheet.appendRow([
+    historySheet.appendRow([
       runTime,
+      runnerEmail,
       controlId,
       ctrlName,
+      period,
       result.verdict,
       gapSummary,
-      runnerEmail,
     ]);
     const newRowNum = historySheet.getLastRow();
-    historySheet.getRange(newRowNum, 4).setBackground(
+    historySheet.getRange(newRowNum, 6).setBackground(
       result.verdict === 'Passed' ? '#d9ead3' : '#fce5cd'
     );
 
