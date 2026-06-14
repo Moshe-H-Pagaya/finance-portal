@@ -142,7 +142,7 @@ function setupInstructions() {
 
   // Title
   instrSheet.getRange(row, 1, 1, 5).merge()
-    .setValue('SOX Dashboard Agent — Instructions')
+    .setValue('SOX Dashboard Agent - Instructions')
     .setBackground(COLOR.titleBg)
     .setFontColor(COLOR.white)
     .setFontWeight('bold')
@@ -193,14 +193,14 @@ function setupInstructions() {
   // ── DRIVE FOLDER STRUCTURE ───────────────────────────────────────────────
   sectionHeader(row, '  DRIVE FOLDER STRUCTURE'); row++;
   const driveLines = [
-    ['Root folder', '(configured in SOX Dashboard > Configure — paste the folder ID from the Drive URL)'],
+    ['Root folder', '(configured in SOX Dashboard > Configure - paste the folder ID from the Drive URL)'],
     ['', ''],
-    ['', 'SOX_Dashboards/                    ← Root folder'],
-    ['', '   IL.FSCP.04/                      ← Folder name must match Control ID exactly'],
-    ['', '      evidence_file.xlsx            ← Files directly in control folder'],
+    ['', 'SOX_Dashboards/                    <- Root folder'],
+    ['', '   IL.FSCP.04/                      <- Folder name must match Control ID exactly'],
+    ['', '      evidence_file.xlsx            <- Files directly in control folder'],
     ['', '      another_file.pdf'],
     ['', '   IL.FSCP.06/'],
-    ['', '      input/                         ← OR files in an "input" subfolder'],
+    ['', '      input/                         <- OR files in an "input" subfolder'],
     ['', '         evidence.xlsx'],
   ];
   driveLines.forEach(([label, desc]) => {
@@ -212,7 +212,7 @@ function setupInstructions() {
   row++;
 
   // ── COLUMN REFERENCE ─────────────────────────────────────────────────────
-  sectionHeader(row, '  COLUMN REFERENCE — "' + tabName + '" tab'); row++;
+  sectionHeader(row, '  COLUMN REFERENCE - "' + tabName + '" tab'); row++;
 
   // Legend row
   const legendCols = [COLOR.gemini, COLOR.control, COLOR.output];
@@ -257,21 +257,21 @@ function setupInstructions() {
   colRow(C.controlId,   'Control ID',              'gemini',  'Must match the Drive folder name');
   colRow(C.name,        'Control Description',     'gemini',  'Describes what the control does');
   colRow(C.objective,   'Test Plan',                'gemini',  'High-level testing objective');
-  colRow(C.procedures,  'Testing Procedures',       'gemini',  'Checklist — every step must have evidence');
+  colRow(C.procedures,  'Testing Procedures',       'gemini',  'Checklist - every step must have evidence');
   colRow(C.period,      'Testing Period',           'gemini',  'Date range evidence must fall within');
   colRow(C.publishDate, 'Publishing Report Date',   'gemini',  'Review/sign-off must be on or before this date');
   row++;
   colRow(C.run,         'Run? (Yes / No)',          'control', 'Set to "Yes" to include this row in the next run');
   row++;
-  colRow(C.result,      'Passed / Failed',          'output',  'Written by script — green = Passed, orange = Failed');
-  colRow(C.gaps,        'Gaps / Notes',             'output',  'Written by script — lists each gap with step reference');
-  colRow(C.lastRun,     'Last Run date and Time',   'output',  'Written by script — timestamp of last run');
+  colRow(C.result,      'Passed / Failed',          'output',  'Written by script - green = Passed, orange = Failed');
+  colRow(C.gaps,        'Gaps / Notes',             'output',  'Written by script - lists each gap with step reference');
+  colRow(C.lastRun,     'Last Run date and Time',   'output',  'Written by script - timestamp of last run');
   row += 2;
 
   // ── CONFIGURATION ────────────────────────────────────────────────────────
   sectionHeader(row, '  CONFIGURATION  (SOX Dashboard > Configure)'); row++;
   const configRows = [
-    ['Gemini API Key', 'Get a free key at https://aistudio.google.com/apikey  —  required for AI analysis'],
+    ['Gemini API Key', 'Get a free key at https://aistudio.google.com/apikey - required for AI analysis'],
     ['Drive Folder ID', 'Open the root SOX evidence folder in Drive, copy the ID from the URL (the part after /folders/)'],
     ['Sheet Tab Name', 'Name of the tab that contains the control list (default: Sheet1)'],
   ];
