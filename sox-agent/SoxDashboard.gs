@@ -163,7 +163,7 @@ function setupInstructions() {
   const howItWorks = [
     ['1.', 'Read sheet', 'The script reads every row in "' + tabName + '" where the Run? column = "Yes".'],
     ['2.', 'Find evidence files', 'For each row it looks up the Drive folder with the same name as the Control ID (case-insensitive). All files inside that folder (and subfolders) are collected.'],
-    ['3.', 'Convert files', 'XLSX / Google Sheets files are converted to text (all tabs). Word/Docs files are extracted as plain text. PDFs and images are sent as-is. Files over 300 KB of text are trimmed.'],
+    ['3.', 'Convert files', 'XLSX / Google Sheets files are converted to text (all tabs included). The header row of each sheet is always kept. If a file is large, the most recent rows are kept and older ones are omitted with a note. Word/Docs are extracted as plain text. PDFs and images are sent as-is.'],
     ['4.', 'Call Gemini AI', 'The control details + evidence files are sent to Google Gemini (gemini-2.5-pro). Gemini checks whether every step in the Testing Procedures has adequate, in-period evidence.'],
     ['5.', 'Write results', 'The verdict (Passed / Failed), gaps, and timestamp are written back to the row. A record is also appended to the Run History tab.'],
   ];
@@ -990,22 +990,54 @@ function getEvidenceFiles(rootFolderId, controlId) {
           }
 
           const ss = SpreadsheetApp.openById(ssId);
+          const sheets = ss.getSheets();
+
+          // Budget: 300K chars split evenly across sheets (at least 50K per sheet)
+          const TOTAL_BUDGET = 300000;
+          const perSheetBudget = Math.max(50000, Math.floor(TOTAL_BUDGET / sheets.length));
+
           let csv = '';
-          ss.getSheets().forEach(function(s) {
+          sheets.forEach(function(s) {
             const lastRow = s.getLastRow();
             const lastCol = s.getLastColumn();
             csv += '=== Sheet: ' + s.getName() + ' ===\n';
-            if (lastRow > 0 && lastCol > 0) {
-              s.getRange(1, 1, lastRow, lastCol).getValues().forEach(function(row) {
-                csv += row.map(function(c) {
-                  const v = String(c === null || c === undefined ? '' : c);
-                  return v.indexOf(',') >= 0 || v.indexOf('"') >= 0 ? '"' + v.replace(/"/g,'""') + '"' : v;
-                }).join(',') + '\n';
-              });
-            } else {
-              csv += '(empty sheet)\n';
+            if (lastRow < 1 || lastCol < 1) {
+              csv += '(empty sheet)\n\n';
+              return;
             }
-            csv += '\n';
+
+            const allRows = s.getRange(1, 1, lastRow, lastCol).getValues();
+
+            function rowToCsv(row) {
+              return row.map(function(c) {
+                const v = String(c === null || c === undefined ? '' : c);
+                return v.indexOf(',') >= 0 || v.indexOf('"') >= 0
+                  ? '"' + v.replace(/"/g, '""') + '"' : v;
+              }).join(',') + '\n';
+            }
+
+            const headerLine = rowToCsv(allRows[0]);  // always include header row
+            const dataRows   = allRows.slice(1);       // remaining rows
+
+            // Build CSV within budget: header + as many rows as fit, preferring the most recent
+            let sheetCsv = headerLine;
+            let budget = perSheetBudget - headerLine.length;
+            const included = [];
+            // Walk from the end (most recent) back
+            for (let r = dataRows.length - 1; r >= 0 && budget > 0; r--) {
+              const line = rowToCsv(dataRows[r]);
+              if (line.length <= budget) {
+                included.unshift(line);   // prepend to keep chronological order
+                budget -= line.length;
+              }
+            }
+            const skipped = dataRows.length - included.length;
+            if (skipped > 0) {
+              sheetCsv += '[' + skipped + ' older rows omitted — showing the ' +
+                           included.length + ' most recent rows]\n';
+            }
+            sheetCsv += included.join('');
+            csv += sheetCsv + '\n';
           });
 
           if (tempId) {
@@ -1013,21 +1045,13 @@ function getEvidenceFiles(rootFolderId, controlId) {
           }
 
           if (csv.trim().length > 0) {
-            // Cap individual file at 300K chars (~75K tokens) — keep header row of each sheet
-            const MAX_FILE_CHARS = 300000;
-            let finalCsv = csv;
-            if (csv.length > MAX_FILE_CHARS) {
-              finalCsv = csv.slice(0, MAX_FILE_CHARS) +
-                '\n\n[TRUNCATED: file was ' + Math.round(csv.length / 1000) + 'K chars, showing first ' +
-                Math.round(MAX_FILE_CHARS / 1000) + 'K chars only]\n';
-              Logger.log('Truncated large spreadsheet: ' + name + ' from ' + csv.length + ' to ' + MAX_FILE_CHARS + ' chars');
-            }
+            const finalCsv = csv;
+            Logger.log('Converted spreadsheet: ' + name + ' (' + sheets.length + ' tabs, ' + csv.length + ' chars, budget ' + TOTAL_BUDGET + ')');
             evidence.push({
               name: name + '.txt',
               mimeType: 'text/plain',
               data: Utilities.base64Encode(Utilities.newBlob(finalCsv, 'text/plain; charset=utf-8').getBytes()),
             });
-            Logger.log('Converted spreadsheet to text: ' + name + ' (' + ss.getSheets().length + ' tabs, ' + finalCsv.length + ' chars)');
           }
         } catch (e) {
           Logger.log('Failed to convert spreadsheet ' + name + ': ' + e.message);
