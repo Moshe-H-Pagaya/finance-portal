@@ -1188,12 +1188,18 @@ function analyzeControl(apiKey, controlId, controlName, controlObjective, testin
     'If ANY criterion is not met → verdict must be "Failed".\n\n' +
 
     'INSTRUCTIONS\n' +
-    '1. Read each evidence file carefully, noting all dates.\n' +
-    '2. Distinguish control-execution dates from review/sign-off dates.\n' +
-    '3. For each step in "Testing Procedures", verify evidence exists and dates are in range.\n' +
-    '4. List every gap as a separate entry. Be specific: name the step and reason\n' +
+    '1. Each evidence file is preceded by a label line: --- Evidence file: "filename" ---\n' +
+    '   The filename is significant — it often identifies the subsidiary, entity, or scope\n' +
+    '   (e.g. "...Tech US" means it covers the Tech US entity). Use the filename as context\n' +
+    '   when determining what the file is evidence for.\n' +
+    '2. Read each evidence file carefully, noting all dates.\n' +
+    '3. Distinguish control-execution dates from review/sign-off dates.\n' +
+    '4. For each step in "Testing Procedures", verify evidence exists and dates are in range.\n' +
+    '   If the step requires evidence for a specific subsidiary/entity, check the filenames\n' +
+    '   to find which file covers that entity before concluding evidence is missing.\n' +
+    '5. List every gap as a separate entry. Be specific: name the step and reason\n' +
     '   (e.g. "Step 2: no approval log found for Q1 2026").\n' +
-    '5. Do NOT flag review/sign-off dates as gaps if they are within the allowed window.\n\n' +
+    '6. Do NOT flag review/sign-off dates as gaps if they are within the allowed window.\n\n' +
 
     'RESPONSE FORMAT — respond with valid JSON only, no markdown fences:\n' +
     '{\n' +
@@ -1220,13 +1226,23 @@ function analyzeControl(apiKey, controlId, controlName, controlObjective, testin
       Logger.log('Blocked unsupported MIME before Gemini call: ' + ef.mimeType + ' (' + ef.name + ')');
       continue;
     }
+
+    // Always insert a text label before each file so Gemini knows the filename.
+    // This is critical: the filename often contains the subsidiary, period, or scope
+    // (e.g. "IL.FSCP.12.3 - Prepaid amortization run March 2026 Tech US").
+    const fileLabel = '--- Evidence file: "' + ef.name.replace(/\.txt$/, '') + '" ---\n';
+    parts.push({ inlineData: {
+      mimeType: 'text/plain',
+      data: Utilities.base64Encode(Utilities.newBlob(fileLabel, 'text/plain; charset=utf-8').getBytes()),
+    }});
+
     // Decode to check size, truncate if adding this file would exceed the total cap
     const decoded = Utilities.newBlob(Utilities.base64Decode(ef.data)).getDataAsString();
     if (totalChars + decoded.length > MAX_TOTAL_CHARS) {
       const remaining = MAX_TOTAL_CHARS - totalChars;
       if (remaining > 500) {
         const truncated = decoded.slice(0, remaining) +
-          '\n\n[TRUNCATED: total evidence size limit reached — ' +
+          '\n\n[TRUNCATED: total evidence size limit reached - ' +
           Math.round((decoded.length - remaining) / 1000) + 'K chars omitted from this file]\n';
         parts.push({ inlineData: {
           mimeType: 'text/plain',
