@@ -10,6 +10,8 @@
 // =============================================================================
 
 import { execFile } from "node:child_process";
+import dns from "node:dns";
+import net from "node:net";
 import express, { type Request, type Response, type NextFunction } from "express";
 import path from "node:path";
 import fs from "node:fs";
@@ -354,6 +356,159 @@ function requireAdminAccess(req: Request, res: Response, next: NextFunction): vo
   });
 }
 
+// ── SSRF-guarded URL fetch (for the admin "Polish" feature) ─────────────────
+// Optionally pulls the App URL's page content as extra context for the LLM.
+// Since this is a server-side request to an admin-supplied URL, we guard
+// against SSRF: only http/https, and every resolved IP (across redirects)
+// must be public — blocks loopback, private ranges, link-local and the GCP
+// metadata IP (169.254.169.254).
+
+function ipIsPrivate(ip: string): boolean {
+  const type = net.isIP(ip);
+  if (type === 4) {
+    const [a, b] = ip.split(".").map((n) => parseInt(n, 10));
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;            // link-local + metadata
+    if (a === 172 && b >= 16 && b <= 31) return true;   // 172.16/12
+    if (a === 192 && b === 168) return true;            // 192.168/16
+    if (a === 100 && b >= 64 && b <= 127) return true;  // CGNAT 100.64/10
+    return false;
+  }
+  if (type === 6) {
+    const lower = ip.toLowerCase();
+    if (lower === "::1" || lower === "::") return true;            // loopback
+    if (lower.startsWith("fe80")) return true;                    // link-local
+    if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique-local
+    const mapped = lower.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);    // IPv4-mapped
+    if (mapped) return ipIsPrivate(mapped[1]);
+    return false;
+  }
+  return true; // not a valid IP literal → treat as unsafe
+}
+
+async function hostResolvesToPublicIp(host: string): Promise<boolean> {
+  if (net.isIP(host)) return !ipIsPrivate(host);
+  let addrs: dns.LookupAddress[];
+  try {
+    addrs = await dns.promises.lookup(host, { all: true });
+  } catch {
+    return false;
+  }
+  return addrs.length > 0 && addrs.every((a) => !ipIsPrivate(a.address));
+}
+
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchUrlSafely(
+  rawUrl: string,
+): Promise<{ ok: true; text: string } | { ok: false }> {
+  const MAX_HOPS = 3;
+  const MAX_BYTES = 1_500_000;
+  const MAX_TEXT_CHARS = 16_000;
+  const TIMEOUT_MS = 8_000;
+  let current = rawUrl;
+
+  for (let hop = 0; hop <= MAX_HOPS; hop++) {
+    let url: URL;
+    try {
+      url = new URL(current);
+    } catch {
+      return { ok: false };
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") return { ok: false };
+    if (!(await hostResolvesToPublicIp(url.hostname))) return { ok: false };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    let res: Awaited<ReturnType<typeof fetch>>;
+    try {
+      res = await fetch(url.toString(), {
+        method: "GET",
+        redirect: "manual",
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "FinancePortal-Polish/1.0",
+          Accept: "text/html,text/plain,*/*",
+        },
+      });
+    } catch {
+      clearTimeout(timer);
+      return { ok: false };
+    }
+    clearTimeout(timer);
+
+    // Re-validate each redirect hop's host manually.
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      if (!loc || hop === MAX_HOPS) return { ok: false };
+      try {
+        current = new URL(loc, url).toString();
+      } catch {
+        return { ok: false };
+      }
+      continue;
+    }
+
+    if (!res.ok) return { ok: false };
+    const ctype = (res.headers.get("content-type") || "").toLowerCase();
+    if (!ctype.startsWith("text/")) return { ok: false };
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      const t = await res.text();
+      return { ok: true, text: htmlToText(t).slice(0, MAX_TEXT_CHARS) };
+    }
+    let received = 0;
+    const chunks: Buffer[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        received += value.length;
+        if (received > MAX_BYTES) {
+          try { await reader.cancel(); } catch { /* ignore */ }
+          break;
+        }
+        chunks.push(Buffer.from(value));
+      }
+    }
+    const text = Buffer.concat(chunks).toString("utf8");
+    return { ok: true, text: htmlToText(text).slice(0, MAX_TEXT_CHARS) };
+  }
+  return { ok: false };
+}
+
+// Server-side allowlist sanitizer for the polished description HTML. Mirrors
+// the DOMPurify allowlist used on the portal: keep a small set of formatting
+// tags, drop every attribute. The client sanitizes again (defense in depth).
+function sanitizeDescriptionHtml(html: string): string {
+  const ALLOWED = new Set([
+    "b", "strong", "i", "em", "code", "ul", "ol", "li", "br", "p",
+  ]);
+  let out = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "");
+  out = out.replace(/<\/?([a-zA-Z0-9]+)(?:\s[^>]*)?>/g, (match, tag: string) => {
+    const t = String(tag).toLowerCase();
+    if (!ALLOWED.has(t)) return "";
+    if (match.startsWith("</")) return `</${t}>`;
+    if (t === "br") return "<br>";
+    return `<${t}>`;
+  });
+  return out.trim();
+}
+
 // ── App ─────────────────────────────────────────────────────────────────────
 const app = express();
 app.set("trust proxy", true);
@@ -461,6 +616,10 @@ const GEMINI_PROJECT  = process.env.SOX_JOB_PROJECT  || "finance-ai-497313";
 const GEMINI_LOCATION = process.env.SOX_JOB_REGION   || "us-east1";
 const GEMINI_MODEL    = process.env.GEMINI_MODEL      || "gemini-2.0-flash-001";
 
+// Dedicated model for the admin "Polish description" feature. Kept separate
+// from GEMINI_MODEL so changing it never affects SOX analysis behavior.
+const POLISH_MODEL = process.env.POLISH_MODEL || "gemini-2.5-pro";
+
 const SOX_SYSTEM_INSTRUCTION = `You are a SOX (Sarbanes-Oxley) compliance auditor.
 Your job is to review evidence files for an internal control and determine whether
 it is operating effectively. Be precise and concise. Avoid vague statements.
@@ -547,6 +706,94 @@ app.post("/api/sox-analyze", requireAdminAccess, async (req, res) => {
     res.json({ ok: true, ...parsed });
   } catch (err: any) {
     console.error("[POST /api/sox-analyze]", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// ── API: Polish description (admin only) ────────────────────────────────────
+// POST /api/polish-description — improves a card description with Gemini.
+// Body (JSON):
+//   { description: string (HTML), appUrl?: string }
+// When appUrl is provided and reachable (public URL only), its page text is
+// fetched and passed as reference context. Returns sanitized HTML.
+//   { ok: true, polished: string, usedAppUrl: boolean }
+
+const POLISH_SYSTEM_INSTRUCTION = `You are an expert technical writer for an internal "Finance AI & Automation Portal".
+You rewrite short descriptions of finance automations and apps so they are clear, professional, concise and easy to scan.
+Rules:
+- Improve grammar, clarity, tone and structure. Keep it factual.
+- Do NOT invent features, integrations, owners, or capabilities that are not present in the input.
+- Prefer a short lead sentence, optionally followed by a compact bullet list of key points.
+- Output ONLY HTML using these tags: <b>, <strong>, <i>, <em>, <code>, <ul>, <ol>, <li>, <br>, <p>.
+- Do not include markdown, code fences, headings, links, images, styles, scripts, or any attributes.`;
+
+app.post("/api/polish-description", requireAdminAccess, async (req, res) => {
+  try {
+    const { description = "", appUrl = "" } = req.body as {
+      description?: string;
+      appUrl?: string;
+    };
+
+    const plainDescription = htmlToText(String(description));
+    if (!plainDescription) {
+      res.status(400).json({ ok: false, error: "description is required" });
+      return;
+    }
+
+    // Optionally fetch the App URL content for extra context.
+    let referenceText = "";
+    let usedAppUrl = false;
+    const trimmedUrl = String(appUrl).trim();
+    if (trimmedUrl && trimmedUrl !== "#") {
+      const fetched = await fetchUrlSafely(trimmedUrl);
+      if (fetched.ok && fetched.text) {
+        referenceText = fetched.text;
+        usedAppUrl = true;
+      }
+    }
+
+    const promptParts = [
+      "Rewrite and improve the following automation/app description for the portal.",
+      "",
+      "CURRENT DESCRIPTION (HTML):",
+      String(description),
+    ];
+    if (referenceText) {
+      promptParts.push(
+        "",
+        "REFERENCE CONTEXT (extracted text from the linked app page — use only to clarify, never to invent):",
+        referenceText,
+      );
+    }
+    promptParts.push(
+      "",
+      "Return the improved description as HTML only, following all the rules.",
+    );
+
+    const vertexai = new VertexAI({ project: GEMINI_PROJECT, location: GEMINI_LOCATION });
+    const model = vertexai.getGenerativeModel({
+      model: POLISH_MODEL,
+      systemInstruction: POLISH_SYSTEM_INSTRUCTION,
+    });
+
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: promptParts.join("\n") }] }],
+    });
+    let raw = result.response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+
+    // Strip markdown code fences if the model wraps output.
+    const fenceMatch = raw.match(/```(?:html)?\s*([\s\S]*?)```/);
+    if (fenceMatch) raw = fenceMatch[1].trim();
+
+    const polished = sanitizeDescriptionHtml(raw);
+    if (!polished) {
+      res.status(502).json({ ok: false, error: "Model returned no usable content" });
+      return;
+    }
+
+    res.json({ ok: true, polished, usedAppUrl });
+  } catch (err: any) {
+    console.error("[POST /api/polish-description]", err);
     res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Card · Admin Console</title>
   <link rel="icon" type="image/png" href="/favicon.png">
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -87,6 +88,40 @@
     .rte-editor:empty::before { content: attr(data-placeholder); color: var(--gray-400); pointer-events: none; }
     .rte-editor ul { padding-left: 20px; }
     .rte-editor code { background: var(--gray-100); padding: 1px 5px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 12px; }
+    .section-head .section-title { margin-bottom: 0; }
+    .btn-polish {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 7px; font-size: 12px; font-weight: 600;
+      font-family: inherit; cursor: pointer; transition: all var(--transition);
+      background: #EFFCF8; color: #047857; border: 1px solid #99E6D3;
+    }
+    .btn-polish:hover { background: #DCFCE7; border-color: #00C9A7; }
+    .btn-polish:disabled { opacity: .55; cursor: not-allowed; }
+    .polish-preview {
+      margin-top: 14px; border: 1px solid #99E6D3; border-radius: 8px;
+      background: #F7FFFD; overflow: hidden;
+    }
+    .polish-preview-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; background: #EFFCF8; border-bottom: 1px solid #CCEFE5;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #047857;
+    }
+    .polish-preview-body { padding: 12px 14px; font-size: 13px; line-height: 1.6; color: var(--text); }
+    .polish-preview-body ul { padding-left: 20px; }
+    .polish-preview-body code { background: var(--gray-100); padding: 1px 5px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+    .polish-preview-actions { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid #CCEFE5; background: #F0FBF8; }
+    .btn-accept {
+      padding: 7px 16px; background: #00C9A7; color: #fff; border: none; border-radius: 7px;
+      font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background var(--transition);
+    }
+    .btn-accept:hover { background: #00b395; }
+    .btn-discard {
+      padding: 7px 14px; background: var(--white); color: var(--muted); border: 1px solid var(--gray-200);
+      border-radius: 7px; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; transition: all var(--transition);
+    }
+    .btn-discard:hover { background: var(--gray-50); border-color: var(--gray-400); }
+    .spinner-teal { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(4,120,87,.25); border-top-color: #047857; border-radius: 50%; animation: spin .7s linear infinite; }
     .platform-toggle { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
     .platform-toggle input[type=radio] { position: absolute; opacity: 0; pointer-events: none; }
     .platform-toggle label {
@@ -195,7 +230,12 @@
     </div>
 
     <div class="section">
-      <div class="section-title">Description</div>
+      <div class="section-head">
+        <div class="section-title">Description</div>
+        <button type="button" class="btn-polish" id="btn-polish" onclick="polishDescription()" title="Improve this description with AI">
+          ✨ Polish with AI
+        </button>
+      </div>
       <div class="field">
         <label>Description *</label>
         <div class="rte-wrap">
@@ -210,6 +250,15 @@
           </div>
           <div class="rte-editor" id="f-description" contenteditable="true"
                data-placeholder="Describe what this automation does…"></div>
+        </div>
+      </div>
+
+      <div class="polish-preview" id="polish-preview" style="display:none">
+        <div class="polish-preview-head">✨ AI-polished suggestion</div>
+        <div class="polish-preview-body" id="polish-preview-body"></div>
+        <div class="polish-preview-actions">
+          <button type="button" class="btn-accept" onclick="acceptPolish()">Accept</button>
+          <button type="button" class="btn-discard" onclick="discardPolish()">Discard</button>
         </div>
       </div>
     </div>
@@ -438,6 +487,70 @@ function showToast(msg, isError) {
   t.className = 'toast show' + (isError ? ' error' : '');
   clearTimeout(t._timer);
   t._timer = setTimeout(function() { t.className = 'toast'; }, 3000);
+}
+
+// Same allowlist the portal uses to render descriptions (defense in depth —
+// the server also sanitizes the polished HTML before returning it).
+var DESC_ALLOWED_TAGS = ['b','strong','i','em','code','ul','ol','li','br','p'];
+function sanitizeDesc(html) {
+  if (window.DOMPurify) {
+    return DOMPurify.sanitize(html || '', { ALLOWED_TAGS: DESC_ALLOWED_TAGS, ALLOWED_ATTR: [] });
+  }
+  return String(html || '').replace(/<[^>]*>/g, '');
+}
+
+var POLISHED_HTML = '';
+
+async function polishDescription() {
+  var desc = document.getElementById('f-description').innerHTML.trim();
+  var plain = desc.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!plain) { showToast('Write a description first', true); return; }
+
+  var appUrl = document.getElementById('f-sheet-url').value.trim();
+  var btn = document.getElementById('btn-polish');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-teal"></span> Polishing…';
+
+  try {
+    const res = await fetch('/api/polish-description', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ description: desc, appUrl: appUrl })
+    });
+    const json = await res.json();
+    if (json && json.ok) {
+      POLISHED_HTML = sanitizeDesc(json.polished);
+      document.getElementById('polish-preview-body').innerHTML = POLISHED_HTML;
+      document.getElementById('polish-preview').style.display = '';
+      if (appUrl && appUrl !== '#' && !json.usedAppUrl) {
+        showToast('Polished. (App URL could not be read — used description only)');
+      } else {
+        showToast('Polished ✓ — review the suggestion');
+      }
+    } else {
+      showToast('Error: ' + (json && json.error ? json.error : 'unknown'), true);
+    }
+  } catch (err) {
+    showToast('Error: ' + (err && err.message ? err.message : String(err)), true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '✨ Polish with AI';
+  }
+}
+
+function acceptPolish() {
+  if (POLISHED_HTML) {
+    document.getElementById('f-description').innerHTML = POLISHED_HTML;
+  }
+  discardPolish();
+  showToast('Description updated ✓');
+}
+
+function discardPolish() {
+  document.getElementById('polish-preview').style.display = 'none';
+  document.getElementById('polish-preview-body').innerHTML = '';
+  POLISHED_HTML = '';
 }
 
 function rteCmd(cmd) {
