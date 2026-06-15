@@ -315,6 +315,17 @@ const TYPE_CONFIG = {
   slack:        { color: '#4A154B', bg: '#F3E8FF', icon: '' },
   netsuite:     { color: '#1B3A4B', bg: '#E8F0F5', icon: '' },
   salesforce:   { color: '#0176D3', bg: '#E0F2FE', icon: '' },
+  ai_capabilities: {
+    color: '#7C3AED', bg: '#F3E8FF',
+    icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="#7C3AED" style="flex-shrink:0;vertical-align:middle;margin-right:3px"><path d="M12 2l1.9 5.6L19.5 9l-5.6 1.9L12 16.5l-1.9-5.6L4.5 9l5.6-1.9L12 2z"/><path d="M19 14l.9 2.6L22.5 18l-2.6.9L19 21.5l-.9-2.6L15.5 18l2.6-.9L19 14z"/></svg>'
+  },
+};
+
+// Display labels for tool badges (keys that don't render nicely from the raw value).
+const TOOL_LABEL = {
+  google_sheet: 'Google Sheets',
+  google_drive_folder: 'Google Drive',
+  ai_capabilities: 'AI Capabilities',
 };
 
 const TYPE_BAR = {
@@ -418,7 +429,8 @@ function init() {
       const appUrl = a.sheet_url || a.chat_url || a.slack_url || (a.url && a.url !== '#' ? a.url : '');
       const toolBadges = (a.tools || []).map(t => {
         const tt = TYPE_CONFIG[t];
-        return tt ? '<span class="badge" style="color:' + tt.color + ';background:' + tt.bg + '">' + (tt.icon || '') + t.charAt(0).toUpperCase() + t.slice(1) + '</span>' : '';
+        const label = TOOL_LABEL[t] || (t.charAt(0).toUpperCase() + t.slice(1));
+        return tt ? '<span class="badge" style="color:' + tt.color + ';background:' + tt.bg + '">' + (tt.icon || '') + label + '</span>' : '';
       }).join('');
 
       return '<div class="card">' +
