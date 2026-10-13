@@ -115,6 +115,7 @@ interface Card {
   slack_url?: string;
   tools?: string[];
   business_owner?: string[];
+  app_integration_owner?: string[];
 }
 
 async function readCards(): Promise<Card[]> {

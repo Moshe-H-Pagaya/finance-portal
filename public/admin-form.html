@@ -312,6 +312,16 @@
       </div>
     </div>
 
+    <div class="section">
+      <div class="section-title">App Integration Owner(s)</div>
+      <div class="field-row single">
+        <div class="field">
+          <input type="text" id="f-integration-owner" placeholder="e.g. jane.doe@pagaya.com, john.smith@pagaya.com">
+          <span class="hint">Comma-separated email addresses</span>
+        </div>
+      </div>
+    </div>
+
     <div class="form-actions">
       <button class="btn-save" id="btn-save" onclick="saveCard()">💾 Save Card</button>
       <a class="btn-cancel" href="/admin">Cancel</a>
@@ -387,6 +397,7 @@ function fillForm(card) {
   document.getElementById('f-chat-url').value    = card.chat_url    || '';
   document.getElementById('f-slack-url').value   = card.slack_url   || '';
   document.getElementById('f-owner').value       = (card.business_owner || []).join(', ');
+  document.getElementById('f-integration-owner').value = (card.app_integration_owner || []).join(', ');
 
   var radio = document.querySelector('input[value="' + (card.type || 'apps_script') + '"]');
   if (radio) radio.checked = true;
@@ -415,6 +426,8 @@ function readForm() {
 
   var ownerRaw = document.getElementById('f-owner').value.trim();
   var owners   = ownerRaw ? ownerRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  var integrationRaw    = document.getElementById('f-integration-owner').value.trim();
+  var integrationOwners = integrationRaw ? integrationRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
 
   var existingId = document.getElementById('f-id').value.trim();
   var id = existingId || slugify(name);
@@ -426,7 +439,7 @@ function readForm() {
     sheet_url: document.getElementById('f-sheet-url').value.trim() || '',
     chat_url:  document.getElementById('f-chat-url').value.trim()  || '',
     slack_url: document.getElementById('f-slack-url').value.trim() || '',
-    tools: tools, business_owner: owners,
+    tools: tools, business_owner: owners, app_integration_owner: integrationOwners,
   };
 }
 

@@ -162,7 +162,7 @@ function renderList() {
   var typeClass = { python_script: 'type-py', workato: 'type-wk', workato_ai: 'type-wkai', apps_script: 'type-gas' };
 
   wrap.innerHTML = '<table class="cards-table"><thead><tr>' +
-    '<th style="width:32px"></th><th>Card</th><th>Category</th><th>Platform</th><th>Business Owner(s)</th><th>Actions</th>' +
+    '<th style="width:32px"></th><th>Card</th><th>Category</th><th>Platform</th><th>Business Owner(s)</th><th>App Integration Owner(s)</th><th>Actions</th>' +
     '</tr></thead><tbody id="sortable-body">' +
     CARDS.map(function(c) {
       var editUrl = '/admin-form?id=' + encodeURIComponent(c.id);
@@ -173,6 +173,7 @@ function renderList() {
         '<td style="font-size:13px">' + esc(c.category || '') + '</td>' +
         '<td><span class="type-badge ' + (typeClass[c.type] || 'type-wk') + '">' + (typeLabel[c.type] || c.type || '') + '</span></td>' +
         '<td style="font-size:13px;color:var(--muted)">' + esc((c.business_owner || []).join(', ') || '—') + '</td>' +
+        '<td style="font-size:13px;color:var(--muted)">' + esc((c.app_integration_owner || []).join(', ') || '—') + '</td>' +
         '<td><div class="action-cell">' +
           '<a class="btn-edit" href="' + editUrl + '">✎ Edit</a>' +
           '<button class="btn-del" onclick="confirmDelete(\'' + esc(c.id) + '\',\'' + esc(c.name || '').replace(/'/g, "\\'") + '\')">✕ Delete</button>' +

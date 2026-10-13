@@ -164,7 +164,10 @@
       font-size: 12px; color: var(--text-muted);
     }
     .meta-item svg { flex-shrink: 0; opacity: 0.6; }
-    .card-actions { display: flex; align-items: center; gap: 8px; align-self: flex-end; }
+    .card-meta { gap: 8px; }
+    .owner-block { display: flex; flex-direction: column; gap: 3px; }
+    .owner-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #6B7280; }
+    .card-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-self: flex-end; }
     .btn-open {
       display: inline-flex; align-items: center; justify-content: center; gap: 5px;
       height: 36px; padding: 0 14px; border-radius: var(--radius-sm);
@@ -343,6 +346,32 @@ const SVG = {
   openApp: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>'
 };
 
+function escAttr(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function linkButton(label, url) {
+  var href = String(url || '').trim();
+  if (!href || href === '#') return '';
+  return '<a class="btn-open" href="' + escAttr(href) + '" target="_blank" rel="noopener noreferrer">' +
+    SVG.openApp + ' ' + label + '</a>';
+}
+
+function ownerBlock(label, owners) {
+  var list = (Array.isArray(owners) ? owners : (owners ? [owners] : []))
+    .map(function(e) { return String(e || '').trim(); })
+    .filter(Boolean);
+  if (!list.length) return '';
+  return '<div class="owner-block">' +
+    '<span class="owner-label">' + label + '</span>' +
+    '<span class="meta-item">' + SVG.email + ' ' +
+    list.map(function(e) {
+      return '<a href="mailto:' + escAttr(e) + '" style="color:inherit;text-decoration:underline dotted">' + escAttr(e) + '</a>';
+    }).join(', ') +
+    '</span></div>';
+}
+
 // ── Merge icon overrides into TYPE_CONFIG ─────────────────────
 (function() {
   var ov = window.ICON_OVERRIDES || {};
@@ -426,7 +455,6 @@ function init() {
     container.innerHTML = filtered.map(a => {
       const tc  = TYPE_CONFIG[a.type] || { color: '#4B5563', bg: '#F3F4F6', icon: '' };
       const bar = TYPE_BAR[a.type] || '#9CA3AF';
-      const appUrl = a.sheet_url || a.chat_url || a.slack_url || (a.url && a.url !== '#' ? a.url : '');
       const toolBadges = (a.tools || []).map(t => {
         const tt = TYPE_CONFIG[t];
         const label = TOOL_LABEL[t] || (t.charAt(0).toUpperCase() + t.slice(1));
@@ -444,21 +472,14 @@ function init() {
           '<div class="card-desc">' + DOMPurify.sanitize(a.description || '', { ALLOWED_TAGS: ['b','strong','i','em','code','ul','ol','li','br','p'], ALLOWED_ATTR: [] }) + '</div>' +
           '<div class="card-footer">' +
             '<div class="card-meta">' +
-              (a.business_owner && a.business_owner.length
-                ? '<div style="display:flex;flex-direction:column;gap:3px">' +
-                  '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6B7280">Business Owner</span>' +
-                  '<span class="meta-item">' + SVG.email + ' ' +
-                  (Array.isArray(a.business_owner) ? a.business_owner : [a.business_owner])
-                    .map(e => '<a href="mailto:' + e + '" style="color:inherit;text-decoration:underline dotted">' + e + '</a>')
-                    .join(', ') + '</span>' +
-                  '</div>'
-                : '') +
+              ownerBlock('Business Owner', a.business_owner) +
+              ownerBlock('App Integration Owner', a.app_integration_owner) +
             '</div>' +
             '<div class="card-actions">' +
-              (appUrl
-                ? '<a class="btn-open" href="' + appUrl + '" target="_blank" rel="noopener noreferrer">' +
-                  SVG.openApp + ' Open App</a>'
-                : '') +
+              linkButton('Google Drive Folder', a.url) +
+              linkButton('App URL', a.sheet_url) +
+              linkButton('Chat', a.chat_url) +
+              linkButton('Slack', a.slack_url) +
             '</div>' +
           '</div>' +
         '</div>' +
