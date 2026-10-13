@@ -227,6 +227,14 @@
           </div>
         </div>
       </div>
+      <div class="field-row single" style="margin-top:14px">
+        <div class="field">
+          <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="f-hide-in-portal"> Show in portal
+          </label>
+          <span class="hint">When checked, this card is hidden from the portal (it stays visible in the admin console)</span>
+        </div>
+      </div>
     </div>
 
     <div class="section">
@@ -398,6 +406,7 @@ function fillForm(card) {
   document.getElementById('f-slack-url').value   = card.slack_url   || '';
   document.getElementById('f-owner').value       = (card.business_owner || []).join(', ');
   document.getElementById('f-integration-owner').value = (card.app_integration_owner || []).join(', ');
+  document.getElementById('f-hide-in-portal').checked = !!card.hide_in_portal;
 
   var radio = document.querySelector('input[value="' + (card.type || 'apps_script') + '"]');
   if (radio) radio.checked = true;
@@ -440,6 +449,7 @@ function readForm() {
     chat_url:  document.getElementById('f-chat-url').value.trim()  || '',
     slack_url: document.getElementById('f-slack-url').value.trim() || '',
     tools: tools, business_owner: owners, app_integration_owner: integrationOwners,
+    hide_in_portal: document.getElementById('f-hide-in-portal').checked,
   };
 }
 

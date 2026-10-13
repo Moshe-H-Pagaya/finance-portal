@@ -395,7 +395,7 @@ async function loadCards() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Failed to load');
-    AUTOMATIONS = json.cards || [];
+    AUTOMATIONS = (json.cards || []).filter(c => !c.hide_in_portal);
     document.getElementById('loading-grid').style.display = 'none';
     document.getElementById('cards').style.display = '';
     init();

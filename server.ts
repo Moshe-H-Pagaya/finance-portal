@@ -116,6 +116,7 @@ interface Card {
   tools?: string[];
   business_owner?: string[];
   app_integration_owner?: string[];
+  hide_in_portal?: boolean;
 }
 
 async function readCards(): Promise<Card[]> {
